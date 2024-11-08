@@ -2,3 +2,5 @@ torch
 transformers
 pandas
 python-dotenv
+scikit-learn
+pandas

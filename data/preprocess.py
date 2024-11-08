@@ -13,14 +13,5 @@ def preprocess_text(texts):
     Returns:
         dict: Encodings with input_ids, attention_masks, etc.
     """
-    encodings = tokenizer(texts, truncation=True, padding=True, max_length=512)
+    encodings = tokenizer(texts, truncation=True, padding=True, max_length=512, return_tensors="pt")
     return encodings
-
-# Placeholder function for timestamp processing, if needed
-def process_timestamps(timestamps):
-    """
-    Example function for timestamp processing.
-    You can add your custom timestamp features here.
-    """
-    # Process timestamps as needed
-    return timestamps
