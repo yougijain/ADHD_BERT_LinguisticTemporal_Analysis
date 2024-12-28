@@ -8,6 +8,11 @@ An in-depth paragraph about your project and overview of use.
 
 ## Getting Started
 
+### Note for CPU-Only Users
+If you do not have a GPU or prefer the CPU-only version of PyTorch, replace this line in `requirements.txt`:
+```plaintext
+torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
 ### Dependencies
 
 * Describe any prerequisites, libraries, OS version, etc., needed before installing program.

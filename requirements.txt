@@ -1,6 +1,9 @@
-torch
+#All Dependencies
+torch --index-url https://download.pytorch.org/whl/cu124
 transformers
 pandas
 python-dotenv
 scikit-learn
-pandas
+nltk
+spacy
+matplotlib
