@@ -1,10 +1,10 @@
 # Project Title
 
-Simple overview of use/purpose.
+
 
 ## Description
 
-An in-depth paragraph about your project and overview of use.
+
 
 ## Getting Started
 
@@ -15,13 +15,11 @@ torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 ### Dependencies
 
-* Describe any prerequisites, libraries, OS version, etc., needed before installing program.
-* ex. Windows 10
+refer to requirements.txt
 
 ### Installing
 
-* How/where to download your program
-* Any modifications needed to be made to files/folders
+
 
 ### Executing program
 
@@ -31,31 +29,35 @@ torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 code blocks for commands
 ```
 
+## Dataset Instructions
+
+This project uses the [ADHD Dataset](https://www.kaggle.com/your-dataset-link). Since the dataset is licensed under CC0: Public Domain, you are free to download and use it.
+
+### Steps to Download:
+1. Visit the dataset page: [ADHD Dataset](https://www.kaggle.com/your-dataset-link).
+2. Download the dataset file.
+3. Place the file in the `datasets/` directory.
+
+Alternatively, you can use the `download_dataset.py` script:
+```bash
+python download_dataset.py
+
+
 ## Help
 
-Any advise for common problems or issues.
-```
-command to run if program contains helper info
-```
 
 ## Authors
 
-Contributors names and contact info
 
-ex. Dominique Pizzie  
-ex. [@DomPizzie](https://twitter.com/dompizzie)
 
 ## Version History
 
-* 0.2
-    * Various bug fixes and optimizations
-    * See [commit change]() or See [release history]()
-* 0.1
-    * Initial Release
+
+0.1
 
 ## License
 
-This project is licensed under the [NAME HERE] License - see the LICENSE.md file for details
+
 
 ## Acknowledgments
 
