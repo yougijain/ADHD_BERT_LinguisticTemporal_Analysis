@@ -1,9 +1,13 @@
 ## CURRENT STATUS
 This project is currently in progress. The following features are implemented:
-- [List working components, e.g., data preprocessing, model structure, etc.]
+- List working components
+- data preprocessing
+- model structure
 
 Areas for future improvement include:
-- [List incomplete or non-functional components, e.g., improving model accuracy, integrating visualization, etc.]
+- List incomplete, non-functional components
+- improving model accuracy
+- integrating visualization
 
 
 
