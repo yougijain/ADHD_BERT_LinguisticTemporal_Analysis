@@ -1,3 +1,6 @@
 adhd_env/
 **/__pycache__/
+
+#super large files
 datasets/*.csv
+*.pth
