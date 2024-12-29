@@ -1,61 +1,83 @@
-# Main script to run the entire pipeline
-
 import os
+import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertForSequenceClassification
-from torch.optim import AdamW  # Using PyTorch's AdamW to avoid deprecation warning
-from data.preprocess import preprocess_text
+from transformers import BertForSequenceClassification, AdamW
+# preprocess_text for smaller datasets, batch_tokenize for larger datasets (default)
+from data.preprocess import preprocess_text, clean_dataset
+ 
 from data.data_loader import ADHDTextDataset
 from training.train import train_model
 from training.evaluate import evaluate_model
+from utils.time_utils import convert_to_datetime
+from data.preprocess import batch_tokenize
 
-# Disable symlink warning
+# Disable symlink warnings
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-# Larger synthetic dataset for testing (balanced and varied)
-texts = [
-    "I am feeling very restless today.", "I have been distracted a lot lately.",
-    "I am focused and relaxed.", "I have been able to concentrate well.",
-    "I feel anxious and can't sit still.", "I'm always on edge.",
-    "Today, I feel calm and collected.", "I'm able to work without distractions.",
-    "My thoughts are racing and I can't focus.", "I feel like I can't stay still.",
-    "I am focused on my work and calm.", "I have clear thoughts and can concentrate.",
-    "I am often fidgeting and can't sit still.", "I can't seem to finish tasks.",
-    "I've been hyperactive and impatient.", "I feel like I can't focus on anything.",
-    "I am at peace and focused.", "I am in control of my mind.",
-    "I am constantly moving and restless.", "My mind keeps wandering.",
-    "I can sit for hours without feeling anxious.", "I am relaxed and focused.",
-    "I feel incredibly tense and distracted.", "I struggle with impulsive decisions.",
-    "I find it hard to stay in one place.", "My mind is calm and focused on my work.",
-    "I am jittery and feel like I'm always on the go.", "I tend to get sidetracked easily.",
-    "I have a clear mind and can concentrate.", "I am calm and collected all day.",
-    "I'm easily distracted and find it hard to concentrate.", "I am very relaxed and at ease.",
-    "My thoughts are everywhere and I can't focus.", "I feel like I can't stop moving.",
-    "I am attentive and focused on my tasks.", "I have peace of mind and no anxiety.",
-]
-labels = [
-    1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0,
-    1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1,
-    1, 0, 1, 1, 0, 0, 1, 1, 1, 0, 0, 0,
-]
+# File paths
+DATASET_PATH = "datasets/ADHD.csv"
 
-# Preprocess text data
-encodings = preprocess_text(texts)
+def load_and_prepare_data():
+    """
+    Load, clean, and preprocess the dataset, then prepare DataLoader objects for training and validation.
+    Returns:
+        DataLoader: Train DataLoader
+        DataLoader: Validation DataLoader
+    """
+    # Load the dataset
+    print("Loading dataset...")
+    data = pd.read_csv(DATASET_PATH)
 
-# Prepare dataset and dataloaders
-dataset = ADHDTextDataset(encodings, labels)
-train_size = int(0.8 * len(dataset))
-val_size = len(dataset) - train_size
-train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    # Clean the dataset
+    print("Cleaning dataset...")
+    data = clean_dataset(data)
 
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=4)
+    # Convert created_utc to datetime
+    print("Converting timestamps...")
+    data = convert_to_datetime(data, "created_utc")
 
-# Load model and optimizer
-model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
-optimizer = AdamW(model.parameters(), lr=2e-5)
+    # Tokenize the text data
+    print("Tokenizing text data...")
+    encodings = batch_tokenize(data["selftext"].tolist(), batch_size=512)
+    labels = data["score"].apply(lambda x: 1 if x > 0 else 0).tolist()  # Example: Binary labels
 
-# Train and evaluate
-train_model(train_loader, model, optimizer, epochs=5)
-evaluate_model(val_loader, model)
+    # Split into training and validation sets
+    train_size = int(0.8 * len(data))
+    val_size = len(data) - train_size
+    train_encodings = {key: val[:train_size] for key, val in encodings.items()}
+    val_encodings = {key: val[train_size:] for key, val in encodings.items()}
+    train_labels = labels[:train_size]
+    val_labels = labels[train_size:]
+
+    # Create ADHDTextDataset and DataLoaders
+    print("Creating DataLoaders...")
+    train_dataset = ADHDTextDataset(train_encodings, train_labels)
+    val_dataset = ADHDTextDataset(val_encodings, val_labels)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=16)
+
+    return train_loader, val_loader
+
+def main():
+    """
+    Main function to train and evaluate the ADHD classification model.
+    """
+    # Load and prepare data
+    train_loader, val_loader = load_and_prepare_data()
+
+    # Initialize model and optimizer
+    print("Initializing model...")
+    model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
+    optimizer = AdamW(model.parameters(), lr=2e-5)
+
+    # Train the model
+    print("Starting training...")
+    train_model(train_loader, model, optimizer, epochs=5, save_path="bert_adhd_model.pth")
+
+    # Evaluate the model
+    print("Evaluating model...")
+    evaluate_model(val_loader, model)
+
+if __name__ == "__main__":
+    main()
