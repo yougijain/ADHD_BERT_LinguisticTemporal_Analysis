@@ -3,14 +3,13 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from transformers import BertForSequenceClassification, AdamW
-# preprocess_text for smaller datasets, batch_tokenize for larger datasets (default)
-from data.preprocess import preprocess_text, clean_dataset
- 
+# preprocess_text for smaller datasets, batch_tokenize for larger datasets
+from data.preprocess import preprocess_text, clean_dataset, batch_tokenize
 from data.data_loader import ADHDTextDataset
 from training.train import train_model
 from training.evaluate import evaluate_model
 from utils.time_utils import convert_to_datetime
-from data.preprocess import batch_tokenize
+import matplotlib.pyplot as plt
 
 # Disable symlink warnings
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
@@ -39,7 +38,7 @@ def load_and_prepare_data():
 
     # Tokenize the text data
     print("Tokenizing text data...")
-    encodings = batch_tokenize(data["selftext"].tolist(), batch_size=512)
+    encodings = batch_tokenize(data["selftext"].tolist(), batch_size=512, max_length=256)
     labels = data["score"].apply(lambda x: 1 if x > 0 else 0).tolist()  # Example: Binary labels
 
     # Split into training and validation sets
@@ -71,9 +70,17 @@ def main():
     model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)
     optimizer = AdamW(model.parameters(), lr=2e-5)
 
-    # Train the model
+    # Train the model with mixed precision training
     print("Starting training...")
-    train_model(train_loader, model, optimizer, epochs=5, save_path="bert_adhd_model.pth")
+    batch_losses = train_model(train_loader, model, optimizer, epochs=5, save_path="bert_adhd_model.pth")
+
+    # Plot the loss trend
+    plt.plot(batch_losses, label="Batch Loss")
+    plt.xlabel("Batch")
+    plt.ylabel("Loss")
+    plt.title("Loss Trend During Training")
+    plt.legend()
+    plt.show()
 
     # Evaluate the model
     print("Evaluating model...")
