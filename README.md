@@ -8,6 +8,7 @@ Areas for future improvement include:
 - List incomplete, non-functional components
 - improving model accuracy
 - integrating visualization
+- temporal component not complete
 
 
 
