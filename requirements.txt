@@ -1,9 +1,16 @@
-#All Dependencies
-torch --index-url https://download.pytorch.org/whl/cu124
-transformers
-pandas
-python-dotenv
-scikit-learn
-nltk
-spacy
-matplotlib
+# Core dependencies.
+#
+# torch is installed from PyPI by default, which pulls the CUDA build on Linux.
+# For a CPU-only install (much smaller, no NVIDIA wheels), install torch first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+# For a specific CUDA build, swap /cpu for /cu124 (or whatever matches your driver).
+torch>=2.1
+transformers>=4.30
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.3
+matplotlib>=3.7
+
+# Testing
+pytest>=7.4
