@@ -34,7 +34,7 @@ from analysis.timestamp_analysis import (  # noqa: E402
     plot_weekly_heatmap,
     summarize_temporal,
 )
-from data.data_loader import build_dataloaders  # noqa: E402
+from data.data_loader import build_dataloaders, split_indices  # noqa: E402
 from data.preprocess import (  # noqa: E402
     batch_tokenize,
     build_labels,
@@ -42,6 +42,7 @@ from data.preprocess import (  # noqa: E402
     clean_dataset,
 )
 from models.bert_adhd_model import BertTemporalClassifier  # noqa: E402
+from models.tfidf_baseline import TfidfBaseline, print_top_features  # noqa: E402
 from models.model_utils import (  # noqa: E402
     describe_model,
     resolve_device,
@@ -54,16 +55,20 @@ from training.train import build_optimizer, train_model  # noqa: E402
 from utils.time_utils import add_temporal_features, temporal_feature_matrix  # noqa: E402
 
 
-def load_and_prepare_data(config, run_analysis=True, offline_tokenizer=False):
-    """Load, clean, featurise, tokenize, and split the dataset.
+def prepare_frame(config, run_analysis=True):
+    """Load, clean, featurise, and label the dataset.
+
+    Everything both models share, so the TF-IDF baseline and the neural model
+    see identical rows, identical labels, and (via config.seed and
+    config.split_strategy) identical splits. A baseline trained on a different
+    split is not a comparison.
 
     Args:
         config (Config): Run configuration.
         run_analysis (bool): Produce the descriptive analysis and figures.
-        offline_tokenizer (bool): Train a WordPiece tokenizer on this corpus
-            instead of downloading one. Lets the pipeline run with no network.
     Returns:
-        tuple: (train_loader, val_loader, info_dict)
+        tuple: (data, labels, temporal_matrix, info_dict). temporal_matrix is
+        None when config.use_temporal_features is False.
     """
     print(f"Loading dataset from {config.dataset_path}...")
     if not config.dataset_path.exists():
@@ -118,6 +123,27 @@ def load_and_prepare_data(config, run_analysis=True, offline_tokenizer=False):
         info["figures"] = [str(p) for p in figures]
         print("  Figures: " + ", ".join(str(p.name) for p in figures))
 
+    temporal_matrix = None
+    if config.use_temporal_features:
+        temporal_matrix = temporal_feature_matrix(data, config.temporal_features)
+        print(f"  Temporal feature matrix: {temporal_matrix.shape}")
+
+    return data, labels, temporal_matrix, info
+
+
+def load_and_prepare_data(config, run_analysis=True, offline_tokenizer=False):
+    """Tokenize and wrap the prepared frame in DataLoaders, for the neural path.
+
+    Args:
+        config (Config): Run configuration.
+        run_analysis (bool): Produce the descriptive analysis and figures.
+        offline_tokenizer (bool): Train a WordPiece tokenizer on this corpus
+            instead of downloading one. Lets the pipeline run with no network.
+    Returns:
+        tuple: (train_loader, val_loader, info_dict)
+    """
+    data, labels, temporal_matrix, info = prepare_frame(config, run_analysis)
+
     print("\nTokenizing...")
     tokenizer = None
     if offline_tokenizer:
@@ -134,11 +160,6 @@ def load_and_prepare_data(config, run_analysis=True, offline_tokenizer=False):
     )
     info["vocab_size"] = int(len(tokenizer)) if tokenizer is not None else None
 
-    temporal_matrix = None
-    if config.use_temporal_features:
-        temporal_matrix = temporal_feature_matrix(data, config.temporal_features)
-        print(f"  Temporal feature matrix: {temporal_matrix.shape}")
-
     print("\nBuilding dataloaders...")
     train_loader, val_loader = build_dataloaders(
         encodings,
@@ -151,6 +172,53 @@ def load_and_prepare_data(config, run_analysis=True, offline_tokenizer=False):
         num_workers=config.num_workers,
     )
     return train_loader, val_loader, info
+
+
+def run_tfidf_baseline(config, run_analysis=True, show_features=True):
+    """Train and evaluate the TF-IDF baseline on the same data and split.
+
+    Returns:
+        dict: config, data info, metrics, and the top signed features.
+    """
+    data, labels, temporal_matrix, info = prepare_frame(config, run_analysis)
+    texts = data["clean_text"].tolist()
+
+    train_idx, val_idx = split_indices(
+        len(data), config.val_split, config.split_strategy, config.seed
+    )
+    print(f"\n  train: {len(train_idx)} samples | val: {len(val_idx)} samples")
+
+    def take(values, idx):
+        return None if values is None else values[idx]
+
+    print("\nFitting TF-IDF baseline...")
+    model = TfidfBaseline(
+        use_temporal_features=config.use_temporal_features,
+        seed=config.seed,
+    )
+    model.fit(
+        [texts[i] for i in train_idx],
+        labels[train_idx],
+        take(temporal_matrix, train_idx),
+    )
+    print(f"  {model.num_features:,} features")
+
+    metrics = model.evaluate(
+        [texts[i] for i in val_idx],
+        labels[val_idx],
+        take(temporal_matrix, val_idx),
+        verbose=True,
+    )
+
+    results = {"config": config.to_dict(), "data": info, "final_metrics": metrics,
+               "num_features": int(model.num_features)}
+
+    if show_features:
+        top = model.top_features(n=15, temporal_feature_names=config.temporal_features)
+        print_top_features(top, n=10)
+        results["top_features"] = top
+
+    return results, model
 
 
 def build_model(config, tiny=False, vocab_size=None):
@@ -173,6 +241,20 @@ def build_model(config, tiny=False, vocab_size=None):
     return BertTemporalClassifier.from_config(config)
 
 
+def _report_lift(metrics):
+    """The number that actually matters: beating the majority-class baseline."""
+    lift = metrics.get("lift_over_baseline", 0.0)
+    if lift <= 0:
+        print(
+            f"\nNOTE: accuracy {metrics['accuracy']:.4f} is at or below the "
+            f"majority-class baseline {metrics['majority_baseline']:.4f}. The "
+            "model has not learned anything useful -- train longer, unfreeze the "
+            "encoder, or check the label strategy."
+        )
+    else:
+        print(f"\nBeat the majority-class baseline by {lift:+.4f} accuracy.")
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="ADHD linguistic-temporal classification pipeline.",
@@ -193,6 +275,9 @@ def parse_args(argv=None):
                             help="Chronological or shuffled train/val split.")
 
     model_group = parser.add_argument_group("model")
+    model_group.add_argument("--model", default="bert", choices=["bert", "tfidf"],
+                             help="Which classifier to run. 'tfidf' is the "
+                                  "linear baseline; it ignores the BERT flags.")
     model_group.add_argument("--model-name", default="bert-base-uncased")
     model_group.add_argument("--max-length", type=int, default=256)
     model_group.add_argument("--no-temporal", action="store_true",
@@ -263,6 +348,15 @@ def main(argv=None):
     else:
         print("Temporal branch: OFF (text-only ablation)")
 
+    if args.model == "tfidf":
+        results, _ = run_tfidf_baseline(config, run_analysis=not args.skip_analysis)
+        metrics_path = save_metrics(
+            results, config.checkpoint_dir.parent / "results_tfidf.json"
+        )
+        print(f"\nResults written to {metrics_path}")
+        _report_lift(results["final_metrics"])
+        return results
+
     offline_tokenizer = args.offline_tokenizer or args.tiny_model
     train_loader, val_loader, info = load_and_prepare_data(
         config,
@@ -308,18 +402,7 @@ def main(argv=None):
     metrics_path = save_metrics(results, config.checkpoint_dir.parent / "results.json")
     print(f"\nResults written to {metrics_path}")
 
-    # The number that actually matters: beating the majority-class baseline.
-    lift = metrics.get("lift_over_baseline", 0.0)
-    if lift <= 0:
-        print(
-            f"\nNOTE: accuracy {metrics['accuracy']:.4f} is at or below the "
-            f"majority-class baseline {metrics['majority_baseline']:.4f}. The "
-            "model has not learned anything useful -- train longer, unfreeze the "
-            "encoder, or check the label strategy."
-        )
-    else:
-        print(f"\nBeat the majority-class baseline by {lift:+.4f} accuracy.")
-
+    _report_lift(metrics)
     return results
 
 
