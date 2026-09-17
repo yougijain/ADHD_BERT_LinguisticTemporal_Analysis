@@ -34,7 +34,8 @@ baseline. The test suite runs offline in a few seconds.
 | TF-IDF + logistic regression baseline | Done |
 | Benchmark grid (model x feature set) | Done |
 | Descriptive analysis + figures | Done |
-| Test suite (153 tests, offline) | Done |
+| Error analysis (slices, calibration, model comparison) | Done |
+| Test suite (193 tests, offline) | Done |
 | Results on the real Kaggle dataset | Not run — see [Dataset](#dataset) |
 
 ## Install
@@ -90,6 +91,8 @@ Analysis on its own, no training:
 python -m analysis.timestamp_analysis --dataset datasets/ADHD_sample.csv
 python -m analysis.pattern_detection  --dataset datasets/ADHD_sample.csv
 python -m analysis.token_stats        --dataset datasets/ADHD_sample.csv --offline
+python -m analysis.error_analysis     --dataset datasets/ADHD_sample.csv
+python -m analysis.error_analysis     --dataset datasets/ADHD_sample.csv --compare-feature-sets
 ```
 
 Tests:
@@ -107,6 +110,8 @@ outputs/
 ├── figures/hourly_activity.png       # posts per hour + engagement rate overlay
 ├── figures/weekly_heatmap.png        # weekday x hour posting volume
 ├── figures/loss_curve.png            # batch loss + moving average
+├── figures/error_rate_by_hour.png    # where the model fails
+├── figures/calibration.png           # confidence vs observed accuracy
 ├── results.json                      # config, metrics, history, correlations
 └── results_tfidf.json                # baseline metrics and top features
 ```
@@ -166,6 +171,60 @@ That generates Reddit-shaped template text with a documented planted signal
 (evening engagement bump, late-night penalty, bonus for asking a question) plus
 the `[removed]`/`[deleted]` rows a real dump is full of, so the cleaning step
 has something to remove. It is fabricated text. It is not data about anyone.
+
+## Error analysis
+
+An accuracy number says how often a model is right. It does not say whether the
+mistakes are spread evenly or piled into one slice, and that difference decides
+whether a result is usable.
+
+```bash
+python -m analysis.error_analysis --dataset datasets/ADHD_sample.csv
+```
+
+Reports:
+
+- **Error rate by slice** — posting hour, weekday, text length, linguistic
+  markers. Buckets under 15 samples are excluded from the ranking, so a 3-row
+  bucket at 100% error cannot pose as the model's biggest weakness.
+- **Error asymmetry** — mistakes running almost entirely one direction mean a
+  threshold problem, not an accuracy problem. Different fix.
+- **Calibration** — a reliability table and expected calibration error. Above
+  ~0.1 the probabilities do not mean what they say, so they can rank but cannot
+  be thresholded for a precision target. The report says so.
+- **The most confident mistakes** — a model that is 95% sure and wrong has
+  learned something false. These explain an error rate faster than any statistic.
+
+On the sample data the baseline sits at 17.6% error with ECE 0.053, and its
+most confident mistakes are all late-night posts that *did* well, called low
+engagement at 0.95+. It learned the planted late-night penalty hard enough to
+override everything else — which is the kind of thing only error analysis
+surfaces.
+
+### Does the ablation fix errors or just move them?
+
+```bash
+python -m analysis.error_analysis --dataset datasets/ADHD_sample.csv --compare-feature-sets
+```
+
+The benchmark table says the temporal features raise accuracy. It cannot say
+whether they fix predictions or shuffle errors around — a model can gain overall
+while getting worse where it matters. This compares the two runs example by
+example:
+
+| | Count |
+|---|---|
+| Both correct | 116 |
+| Both wrong | 25 |
+| Only text-only correct | 14 |
+| Only text+temporal correct | **67** |
+
+67 fixed against 14 broken, a net gain of 53. The features are adding
+information, not reshuffling it — a stronger claim than the accuracy delta alone
+supports.
+
+`compare_predictions()` does the same for any two models, so TF-IDF and BERT can
+be compared the same way once real BERT weights are available.
 
 ## Timezones
 
@@ -243,6 +302,7 @@ no pretrained knowledge, so its accuracy is not a result.
 ├── benchmark.py                   # TF-IDF vs BERT x temporal grid, as one table
 ├── analysis/
 │   ├── pattern_detection.py       # linguistic markers, crossed with posting hour
+│   ├── error_analysis.py          # error slices, calibration, model comparison
 │   ├── timestamp_analysis.py      # temporal EDA and figures
 │   └── token_stats.py             # token-length distribution, truncation rates
 ├── data/
@@ -281,6 +341,10 @@ wordpieces. If the top features look like artefacts, the label is leaking.
 Run the baseline first. It takes seconds, it needs no GPU and no downloads, and
 if it already gets most of the available accuracy then the transformer is
 carrying very little and the honest write-up says so.
+
+Then run the error analysis. Accuracy is one number; where a model fails is the
+part that decides whether it is usable, and it is usually the more interesting
+half of a write-up.
 
 ## Scope and limits
 
