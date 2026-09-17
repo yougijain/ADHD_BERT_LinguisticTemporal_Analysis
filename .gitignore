@@ -1,6 +1,14 @@
+# Virtual environments
 adhd_env/
-**/__pycache__/
+venv/
+.venv/
 
-#super large files
+# Python
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Large artifacts
 datasets/*.csv
 *.pth
+outputs/
