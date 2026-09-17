@@ -1,13 +1,21 @@
 # ADHD Linguistic-Temporal Analysis
 
 Binary classification over Reddit posts using **both** what was written and
-**when** it was written. A BERT encoder handles the text; engineered timestamp
-features (cyclical hour-of-day, day-of-week, weekend and late-night flags) run
-through a small MLP; the two are concatenated before the classification head.
+**when** it was written, benchmarked against a linear baseline.
 
-The point of the architecture is measurable: a `--no-temporal` flag gives you
-the text-only ablation, so you can see what the timestamp is actually worth
-rather than assuming it helps.
+Two models over identical data and splits:
+
+- **TF-IDF + logistic regression** — word and character n-grams, optionally
+  stacked with the temporal features. Fast, interpretable, and a genuinely
+  strong competitor on short text.
+- **BERT + temporal fusion** — a BERT encoder for the text; cyclical
+  hour-of-day, day-of-week, weekend and late-night features through a small
+  MLP; the two concatenated before the classification head.
+
+Both claims the project makes are measurable rather than assumed. `--no-temporal`
+gives the text-only ablation on either architecture, and `benchmark.py` runs the
+full 2x2 grid so you can see whether the transformer earns its cost and whether
+the timestamps contribute anything.
 
 ## Status
 
@@ -22,8 +30,10 @@ baseline. The test suite runs offline in a few seconds.
 | BERT + temporal model, attention pooling | Done |
 | Training loop (warmup, clipping, AMP, checkpoint selection) | Done |
 | Evaluation with baseline comparison | Done |
+| TF-IDF + logistic regression baseline | Done |
+| Benchmark grid (model x feature set) | Done |
 | Descriptive analysis + figures | Done |
-| Test suite (130 tests, offline) | Done |
+| Test suite (153 tests, offline) | Done |
 | Results on the real Kaggle dataset | Not run — see [Dataset](#dataset) |
 
 ## Install
@@ -45,12 +55,26 @@ Swap `/cpu` for `/cu124` (or whatever matches your driver) to pick a CUDA build.
 
 ## Quick start
 
-No dataset and no network needed — this generates sample data, trains a
-miniature model, and prints real metrics:
+The baseline needs no network and no downloads — it generates sample data,
+fits, and prints metrics plus the words driving each class:
+
+```bash
+python main.py --synthetic --model tfidf --split-strategy random
+```
+
+The neural path, on a miniature model so nothing is downloaded:
 
 ```bash
 python main.py --synthetic --tiny-model --epochs 8 --learning-rate 1e-3 \
     --split-strategy random --max-length 64
+```
+
+Both, side by side:
+
+```bash
+python benchmark.py --synthetic --tiny-model --epochs 6 --learning-rate 1e-3 \
+    --max-length 64 --batch-size 32
+python benchmark.py --synthetic --skip-bert     # linear half only, seconds
 ```
 
 The real thing, once you have a dataset (downloads `bert-base-uncased`):
@@ -77,26 +101,48 @@ pytest tests/ -q
 
 ```
 outputs/
+├── benchmark.json                    # the comparison grid
 ├── checkpoints/bert_adhd_model.pth   # best epoch by validation accuracy
 ├── figures/hourly_activity.png       # posts per hour + engagement rate overlay
 ├── figures/weekly_heatmap.png        # weekday x hour posting volume
 ├── figures/loss_curve.png            # batch loss + moving average
-└── results.json                      # config, metrics, history, correlations
+├── results.json                      # config, metrics, history, correlations
+└── results_tfidf.json                # baseline metrics and top features
 ```
 
-## The ablation
+## Results on the sample data
 
-On the bundled synthetic data (tiny random model, 8 epochs, random split):
+Full grid, `benchmark.py --synthetic --tiny-model --epochs 6 --learning-rate 1e-3`,
+majority-class baseline 0.500:
 
-| Configuration | Accuracy | Lift over majority baseline |
-|---|---|---|
-| Text + temporal | 0.698 | +0.198 |
-| Text only (`--no-temporal`) | 0.608 | +0.108 |
+| Model | Features | Accuracy | Macro F1 | Lift |
+|---|---|---|---|---|
+| TF-IDF | text only | 0.5856 | 0.5850 | +0.0856 |
+| TF-IDF | text + temporal | **0.8243** | 0.8239 | +0.3243 |
+| BERT (tiny, random) | text only | 0.6081 | 0.6052 | +0.1081 |
+| BERT (tiny, random) | text + temporal | 0.6667 | 0.6657 | +0.1667 |
 
-The temporal branch is carrying about 9 points. **These numbers are from
-generated template data with a deliberately planted time-of-day signal.** They
-demonstrate the plumbing works; they say nothing about real posts. Re-run the
-comparison on a real dataset before quoting any of it.
+Two things to read off this, and one trap:
+
+**Temporal features help in both architectures** — +0.24 for the linear model,
++0.06 for the neural one. That is the project's central claim, and it holds on
+both.
+
+**The linear baseline wins by a wide margin.** Do not read that as "TF-IDF beats
+BERT": the BERT row is a randomly initialised miniature model with no pretrained
+weights, because this environment could not reach huggingface.co. It is a
+plumbing check, not a competitor. Re-run without `--tiny-model` before drawing
+any conclusion — `benchmark.py` prints this caveat itself when it detects the
+tiny model.
+
+**All of it is synthetic.** Generated template data with a deliberately planted
+time-of-day signal. The numbers demonstrate the pipeline works; they say nothing
+about real posts.
+
+The baseline's coefficients recover the planted structure directly: `hour_cos`
+at -1.41 and `hour_sin` at +1.37 dominate every word feature, with
+`is_late_night` at -0.48 — an evening bump and a late-night penalty, which is
+exactly what the generator plants.
 
 ## Dataset
 
@@ -150,6 +196,7 @@ no pretrained knowledge, so its accuracy is not a result.
 
 | Flag | Effect |
 |---|---|
+| `--model` | `bert` (default) or `tfidf` |
 | `--synthetic` | Generate and use sample data |
 | `--tiny-model` | Random miniature BERT, no download |
 | `--offline-tokenizer` | Corpus-trained tokenizer instead of downloading one |
@@ -168,6 +215,7 @@ no pretrained knowledge, so its accuracy is not a result.
 ```
 .
 ├── main.py                        # CLI pipeline: load -> analyse -> train -> evaluate
+├── benchmark.py                   # TF-IDF vs BERT x temporal grid, as one table
 ├── analysis/
 │   ├── pattern_detection.py       # linguistic markers, crossed with posting hour
 │   ├── timestamp_analysis.py      # temporal EDA and figures
@@ -180,7 +228,8 @@ no pretrained knowledge, so its accuracy is not a result.
 ├── models/
 │   ├── attention_layer.py         # attention pooling over token states
 │   ├── bert_adhd_model.py         # BERT + temporal fusion classifier
-│   └── model_utils.py             # seeding, devices, checkpoints
+│   ├── model_utils.py             # seeding, devices, checkpoints
+│   └── tfidf_baseline.py          # TF-IDF + logistic regression baseline
 ├── training/
 │   ├── config.py                  # every tunable, in one dataclass
 │   ├── evaluate.py                # metrics with baseline comparison
@@ -198,9 +247,15 @@ prints the majority-class baseline and the lift over it. **Lift at or below zero
 means the model learned nothing**, whatever the accuracy says — the run tells
 you so explicitly.
 
-The attention weights (`predict(..., return_attention=True)`) give per-token
-relevance, which is what makes the linguistic side inspectable rather than just
-a number.
+Two ways to inspect what a model keyed on. The neural path's attention weights
+(`predict(..., return_attention=True)`) give per-token relevance. The baseline's
+`top_features()` gives signed per-word coefficients, which is considerably more
+legible — literal words with weights, rather than a distribution over
+wordpieces. If the top features look like artefacts, the label is leaking.
+
+Run the baseline first. It takes seconds, it needs no GPU and no downloads, and
+if it already gets most of the available accuracy then the transformer is
+carrying very little and the honest write-up says so.
 
 ## Scope and limits
 
