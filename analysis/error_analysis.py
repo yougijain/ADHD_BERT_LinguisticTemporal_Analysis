@@ -500,6 +500,79 @@ def analyse_dataset(dataset_path, label_strategy="median", split_strategy="rando
     return frame, report
 
 
+def compare_feature_sets(dataset_path, label_strategy="median",
+                         split_strategy="random", seed=42, val_split=0.2,
+                         max_rows=0):
+    """Error analysis of the temporal ablation: same model, with and without.
+
+    The benchmark says the temporal features raise accuracy. It does not say
+    whether they fix errors or merely move them around -- a model can gain two
+    points overall while getting worse on the slice you care about. This
+    compares the two runs example by example.
+
+    Returns:
+        dict: the comparison, plus each variant's error summary.
+    """
+    from models.tfidf_baseline import TfidfBaseline
+
+    print(f"Loading {dataset_path}...")
+    data = clean_dataset(pd.read_csv(dataset_path))
+    data = add_temporal_features(data, TIMESTAMP_COLUMN)
+    data = add_marker_columns(data)
+
+    if split_strategy == "temporal":
+        data = data.sort_values(TIMESTAMP_COLUMN).reset_index(drop=True)
+    if max_rows and max_rows < len(data):
+        data = data.head(max_rows).reset_index(drop=True)
+
+    labels, _ = build_labels(data, strategy=label_strategy)
+    features = temporal_feature_matrix(data, TEMPORAL_FEATURES)
+    texts = data["clean_text"].tolist()
+    train_idx, val_idx = split_indices(len(data), val_split, split_strategy, seed)
+    val_texts = [texts[i] for i in val_idx]
+
+    frames = {}
+    for name, use_temporal in (("text_only", False), ("text_temporal", True)):
+        model = TfidfBaseline(use_temporal_features=use_temporal, seed=seed)
+        train_features = features[train_idx] if use_temporal else None
+        model.fit([texts[i] for i in train_idx], labels[train_idx], train_features)
+
+        eval_features = features[val_idx] if use_temporal else None
+        frames[name] = build_error_frame(
+            data.iloc[val_idx], labels[val_idx],
+            model.predict(val_texts, eval_features),
+            model.predict_proba(val_texts, eval_features),
+        )
+
+    comparison = compare_predictions(frames["text_only"], frames["text_temporal"],
+                                     "text_only", "text_temporal")
+
+    print(f"\nTemporal ablation, example by example ({comparison['num_samples']} rows)")
+    print(f"  agreement rate           {comparison['agreement_rate']:.1%}")
+    print(f"  both correct             {comparison['both_correct']}")
+    print(f"  both wrong               {comparison['both_wrong']}")
+    print(f"  only text-only correct   {comparison['only_text_only_correct']}")
+    print(f"  only text+temporal right {comparison['only_text_temporal_correct']}")
+
+    gained = comparison["only_text_temporal_correct"]
+    lost = comparison["only_text_only_correct"]
+    if gained > lost:
+        print(f"\n  Adding the timestamps fixes {gained} predictions and breaks "
+              f"{lost}, a net\n  gain of {gained - lost}. They are adding "
+              "information rather than reshuffling it.")
+    elif lost and gained <= lost:
+        print(f"\n  Adding the timestamps fixes {gained} predictions and breaks "
+              f"{lost}. The\n  headline gain is not coming from the temporal "
+              "features on this split.")
+
+    summaries = {name: error_summary(frame) for name, frame in frames.items()}
+    for name, summary in summaries.items():
+        print(f"\n  {name}: error rate {summary['error_rate']:.1%} "
+              f"(FP {summary['false_positive']}, FN {summary['false_negative']})")
+
+    return {"comparison": comparison, "summaries": summaries, "frames": frames}
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Error analysis: which slices the model fails on, and why."
@@ -512,11 +585,19 @@ def main():
                         choices=["temporal", "random"])
     parser.add_argument("--max-rows", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--compare-feature-sets", action="store_true",
+                        help="Compare the text-only and text+temporal runs "
+                             "example by example instead of analysing one.")
     args = parser.parse_args()
 
-    analyse_dataset(args.dataset, label_strategy=args.label_strategy,
-                    split_strategy=args.split_strategy, seed=args.seed,
-                    output_dir=args.output_dir, max_rows=args.max_rows)
+    if args.compare_feature_sets:
+        compare_feature_sets(args.dataset, label_strategy=args.label_strategy,
+                             split_strategy=args.split_strategy, seed=args.seed,
+                             max_rows=args.max_rows)
+    else:
+        analyse_dataset(args.dataset, label_strategy=args.label_strategy,
+                        split_strategy=args.split_strategy, seed=args.seed,
+                        output_dir=args.output_dir, max_rows=args.max_rows)
 
 
 if __name__ == "__main__":
