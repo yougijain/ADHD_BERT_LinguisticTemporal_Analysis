@@ -38,6 +38,57 @@ def get_tokenizer(model_name="bert-base-uncased"):
     return _TOKENIZER_CACHE[model_name]
 
 
+def build_local_tokenizer(texts, vocab_size=2000, lowercase=True):
+    """Train a small WordPiece tokenizer on the corpus itself. No network.
+
+    `bert-base-uncased` is a 440MB download from huggingface.co, which is not
+    available in every environment (air-gapped boxes, locked-down CI, a proxy
+    that blocks the hub). This builds a BERT-compatible tokenizer from the text
+    you already have, so the pipeline has a genuinely offline smoke path.
+
+    The vocabulary is corpus-specific and carries none of BERT's pretraining, so
+    this is for exercising the plumbing -- not for results.
+
+    Returns:
+        PreTrainedTokenizerFast: usable anywhere the HF tokenizer is.
+    """
+    from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, processors
+    from tokenizers.trainers import WordPieceTrainer
+    from transformers import PreTrainedTokenizerFast
+
+    special_tokens = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"]
+
+    tokenizer = Tokenizer(models.WordPiece(unk_token="[UNK]"))
+    normalizer_steps = [normalizers.NFD(), normalizers.StripAccents()]
+    if lowercase:
+        normalizer_steps.append(normalizers.Lowercase())
+    tokenizer.normalizer = normalizers.Sequence(normalizer_steps)
+    tokenizer.pre_tokenizer = pre_tokenizers.BertPreTokenizer()
+    tokenizer.decoder = decoders.WordPiece(prefix="##")
+
+    trainer = WordPieceTrainer(vocab_size=vocab_size, special_tokens=special_tokens,
+                               min_frequency=1)
+    corpus = [t for t in texts if isinstance(t, str) and t.strip()] or ["placeholder"]
+    tokenizer.train_from_iterator(corpus, trainer=trainer)
+
+    cls_id = tokenizer.token_to_id("[CLS]")
+    sep_id = tokenizer.token_to_id("[SEP]")
+    tokenizer.post_processor = processors.TemplateProcessing(
+        single="[CLS] $A [SEP]",
+        pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+        special_tokens=[("[CLS]", cls_id), ("[SEP]", sep_id)],
+    )
+
+    return PreTrainedTokenizerFast(
+        tokenizer_object=tokenizer,
+        unk_token="[UNK]",
+        pad_token="[PAD]",
+        cls_token="[CLS]",
+        sep_token="[SEP]",
+        mask_token="[MASK]",
+    )
+
+
 def clean_text(text):
     """Normalize a single post body for BERT.
 
@@ -197,7 +248,7 @@ def build_labels(data, strategy="median", threshold=1, score_column=SCORE_COLUMN
 
 
 def batch_tokenize(texts, model_name="bert-base-uncased", batch_size=512,
-                   max_length=256, verbose=True):
+                   max_length=256, verbose=True, tokenizer=None):
     """Tokenize texts in batches, padded to a single common length.
 
     Each batch used to be padded to its own longest sequence and the batches
@@ -205,12 +256,17 @@ def batch_tokenize(texts, model_name="bert-base-uncased", batch_size=512,
     batches disagree on length. Padding to `max_length` makes the concatenation
     well-defined.
 
+    Args:
+        tokenizer: A pre-built tokenizer. When given, `model_name` is ignored --
+            this is how the offline path passes in build_local_tokenizer's
+            output.
     Returns:
         dict[str, torch.Tensor]: input_ids and attention_mask.
     """
     import torch
 
-    tokenizer = get_tokenizer(model_name)
+    if tokenizer is None:
+        tokenizer = get_tokenizer(model_name)
     texts = ["" if t is None else str(t) for t in texts]
 
     if not texts:
@@ -241,7 +297,7 @@ def batch_tokenize(texts, model_name="bert-base-uncased", batch_size=512,
 
 
 def preprocess_text(texts, model_name="bert-base-uncased", max_length=256,
-                    batch_size=512, verbose=True):
+                    batch_size=512, verbose=True, tokenizer=None):
     """Clean then tokenize a list of raw texts. Convenience wrapper."""
     if verbose:
         print("Cleaning text data...")
@@ -252,4 +308,5 @@ def preprocess_text(texts, model_name="bert-base-uncased", max_length=256,
         batch_size=batch_size,
         max_length=max_length,
         verbose=verbose,
+        tokenizer=tokenizer,
     )

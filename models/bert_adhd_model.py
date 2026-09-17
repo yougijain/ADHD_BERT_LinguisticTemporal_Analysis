@@ -114,17 +114,22 @@ class BertTemporalClassifier(nn.Module):
         )
 
     @classmethod
-    def tiny_for_testing(cls, num_temporal_features=8, num_labels=2, **kwargs):
+    def tiny_for_testing(cls, num_temporal_features=8, num_labels=2, vocab_size=2048,
+                         max_position_embeddings=512, **kwargs):
         """A randomly initialised miniature BERT. No download, no pretrained
-        weights -- just enough model to exercise shapes and the training loop."""
+        weights -- just enough model to exercise shapes and the training loop.
+
+        vocab_size must cover the tokenizer it will be paired with; the offline
+        path builds a corpus-trained tokenizer, so pass its real vocab size.
+        """
         cfg = AutoConfig.for_model(
             "bert",
-            vocab_size=64,
+            vocab_size=vocab_size,
             hidden_size=32,
             num_hidden_layers=1,
             num_attention_heads=2,
             intermediate_size=64,
-            max_position_embeddings=64,
+            max_position_embeddings=max_position_embeddings,
         )
         encoder = AutoModel.from_config(cfg)
         return cls(
