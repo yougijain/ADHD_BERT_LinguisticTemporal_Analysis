@@ -2,10 +2,13 @@
 
 This is the model the project is named for. A plain
 BertForSequenceClassification sees only the words; it cannot know that a post
-was typed at 3am on a Tuesday. Here the text goes through BERT, the timestamp
-goes through a small MLP, and the two representations are concatenated before
-the classification head -- so the classifier can weigh "what was said" against
-"when it was said".
+was submitted at 03:00 UTC on a Tuesday. Here the text goes through BERT, the
+timestamp goes through a small MLP, and the two representations are concatenated
+before the classification head -- so the classifier can weigh "what was said"
+against "when it was said".
+
+The temporal features are UTC-derived; utils.time_utils documents why that is
+not the same as the poster's local time.
 
 Set use_temporal_features=False to get the text-only ablation and measure what
 the temporal branch is actually worth.

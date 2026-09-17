@@ -9,8 +9,9 @@ Two models over identical data and splits:
   stacked with the temporal features. Fast, interpretable, and a genuinely
   strong competitor on short text.
 - **BERT + temporal fusion** — a BERT encoder for the text; cyclical
-  hour-of-day, day-of-week, weekend and late-night features through a small
-  MLP; the two concatenated before the classification head.
+  hour-of-day, day-of-week, weekend and late-night features (all **UTC**, see
+  [Timezones](#timezones)) through a small MLP; the two concatenated before the
+  classification head.
 
 Both claims the project makes are measurable rather than assumed. `--no-temporal`
 gives the text-only ablation on either architecture, and `benchmark.py` runs the
@@ -142,7 +143,9 @@ about real posts.
 The baseline's coefficients recover the planted structure directly: `hour_cos`
 at -1.41 and `hour_sin` at +1.37 dominate every word feature, with
 `is_late_night` at -0.48 — an evening bump and a late-night penalty, which is
-exactly what the generator plants.
+exactly what the generator plants. (In the synthetic data the clock is
+unambiguous because the generator defines it; on a real dump read these as UTC
+bands, per [Timezones](#timezones).)
 
 ## Dataset
 
@@ -163,6 +166,28 @@ That generates Reddit-shaped template text with a documented planted signal
 (evening engagement bump, late-night penalty, bonus for asking a question) plus
 the `[removed]`/`[deleted]` rows a real dump is full of, so the cleaning step
 has something to remove. It is fabricated text. It is not data about anyone.
+
+## Timezones
+
+**Every temporal feature here is UTC, and that is a real limit on what they
+mean.**
+
+`created_utc` is all Reddit gives us. There is no per-author timezone in the
+dataset, so a poster's local clock time cannot be recovered. Someone in
+California writing at 2am local shows up at 09:00–10:00 UTC and is *not* flagged
+late-night; someone in Berlin writing at 2am local is.
+
+So `is_late_night` does not mean "written in the small hours". It means "written
+in the 00:00–05:00 UTC band", which selects for a mix of local times that
+depends on where the posters live. The feature is still predictive — UTC hour
+correlates with both local hour and how many people are awake to vote — but the
+circadian interpretation is not supported by this data. Don't describe it as a
+sleep or chronotype measure.
+
+Fixing it properly means inferring each author's timezone from the distribution
+of their own posting times across a long history. That is real work and is not
+implemented. Until it is, call these features UTC posting hour and say so in any
+write-up.
 
 ## Labels
 
@@ -259,8 +284,10 @@ carrying very little and the honest write-up says so.
 
 ## Scope and limits
 
-This predicts post engagement from text and timestamp. It is not a diagnostic
-tool, it does not detect ADHD, and it says nothing about any individual. The
+This predicts post engagement from text and UTC timestamp. It is not a
+diagnostic tool, it does not detect ADHD, and it says nothing about any
+individual. The temporal features carry the timezone caveat above, so they are
+not evidence about anyone's sleep. The
 linguistic markers in `analysis/pattern_detection.py` are hand-built keyword
 lists — crude proxies for writing style, deliberately kept visible and editable
 rather than hidden behind a model download, so you can audit exactly what is

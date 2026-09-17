@@ -1,13 +1,31 @@
 """Timestamp handling and temporal feature engineering.
 
 Reddit gives us `created_utc` as a Unix epoch integer. On its own that is a
-meaningless magnitude for a model, so this module turns it into features that
-carry the circadian signal the project cares about: what hour of the day a post
-was written, whether it was a weekday, and whether it landed in the small hours.
+meaningless magnitude for a model, so this module turns it into features: what
+hour of the day a post was written, whether it was a weekday, and whether it
+landed in the small hours.
 
 Hour-of-day and day-of-week are cyclical -- hour 23 is adjacent to hour 0, but
 the raw integers are 23 apart. Encoding each as a (sin, cos) pair puts them on a
 circle so the model sees that adjacency.
+
+TIMEZONE LIMITATION -- read before interpreting any of these features.
+
+Every hour here is UTC, because UTC is all `created_utc` carries. The dataset
+has no per-author timezone, so a poster's *local* clock time cannot be
+recovered. Someone in California writing at 2am local appears at 09:00 or 10:00
+UTC and is not flagged as late-night; someone in Berlin writing at 2am local is.
+
+So `is_late_night` does not mean "posted in the small hours". It means "posted
+in the 00:00-05:00 UTC band", which selects for a mix of local times that varies
+with wherever the posters happen to live. The feature is still predictive -- UTC
+hour correlates with both local hour and audience size -- but the circadian
+reading of it is not supported by this data.
+
+Recovering local time would need per-author timezone, inferred from the
+distribution of each author's own posting times across a long history. That is a
+real piece of work and is not implemented here. Until it is, describe these
+features as UTC posting hour, not as sleep or circadian measures.
 """
 
 import warnings
@@ -15,9 +33,10 @@ import warnings
 import numpy as np
 import pandas as pd
 
-# Posts made in [LATE_NIGHT_START, LATE_NIGHT_END) local hours are flagged as
-# late-night. This window is the "revenge bedtime procrastination" band that
-# shows up in self-reported ADHD sleep patterns.
+# Posts made in [LATE_NIGHT_START, LATE_NIGHT_END) UTC hours are flagged. Note
+# UTC, not the poster's local clock -- see the timezone limitation above. The
+# window is chosen to line up with the small hours, but which local times it
+# actually captures depends on where the posters are.
 LATE_NIGHT_START = 0
 LATE_NIGHT_END = 5
 
@@ -77,7 +96,8 @@ def add_temporal_features(data, column="created_utc"):
     """Derive the model's temporal features from a datetime column.
 
     Adds: hour, day_of_week, month, hour_sin/cos, dow_sin/cos, month_sin/cos,
-    is_weekend, is_late_night.
+    is_weekend, is_late_night. All derived in UTC -- see the module docstring on
+    why that is not the same as the poster's local clock.
 
     Args:
         data (pd.DataFrame): Dataset with `column` already converted to datetime
@@ -148,9 +168,10 @@ def temporal_feature_matrix(data, feature_names):
 
 
 def hourly_distribution(data, column="created_utc", normalize=True):
-    """Posts per hour of day, as a 24-entry Series indexed 0-23.
+    """Posts per UTC hour, as a 24-entry Series indexed 0-23.
 
-    Used by the timestamp analysis to show when the subreddit is awake.
+    Shows when the subreddit is active in UTC terms. It does not show when its
+    users are awake, since that would need their local times.
     """
     data = convert_to_datetime(data, column)
     counts = data[column].dt.hour.value_counts().reindex(range(24), fill_value=0)
@@ -161,7 +182,10 @@ def hourly_distribution(data, column="created_utc", normalize=True):
 
 
 def late_night_share(data, column="created_utc"):
-    """Fraction of posts written in the late-night window. Returns 0.0 if empty."""
+    """Fraction of posts in the 00:00-05:00 UTC window. Returns 0.0 if empty.
+
+    UTC, not local time -- see this module's timezone limitation.
+    """
     data = convert_to_datetime(data, column)
     hours = data[column].dt.hour.dropna()
     if len(hours) == 0:

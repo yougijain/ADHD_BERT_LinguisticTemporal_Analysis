@@ -2,7 +2,10 @@
 
 The other half of the project name. Where timestamp_analysis asks *when* people
 post, this asks *how they write*, and then crosses the two: does the language of
-a 3am post differ measurably from a 3pm one?
+a post submitted at 03:00 UTC differ measurably from one at 15:00 UTC?
+
+Note the UTC qualifier -- it is not the same question as "3am versus 3pm for the
+person writing", which this data cannot answer. See utils.time_utils.
 
 Markers are lexicon and regex based on purpose -- no spacy or nltk model
 download, so this runs on a fresh clone. They are crude proxies for writing
