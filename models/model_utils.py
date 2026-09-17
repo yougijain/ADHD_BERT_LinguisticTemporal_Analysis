@@ -92,15 +92,19 @@ def load_checkpoint(model, path, optimizer=None, device=None, strict=True):
     device = device or resolve_device("auto")
     payload = torch.load(path, map_location=device, weights_only=False)
 
-    state_dict = payload.get("model_state_dict", payload) if isinstance(payload, dict) else payload
+    # A checkpoint from save_checkpoint is a wrapper dict; a bare state_dict is
+    # also a dict, so distinguish them by the wrapper key rather than by type.
+    is_wrapped = isinstance(payload, dict) and "model_state_dict" in payload
+
+    state_dict = payload["model_state_dict"] if is_wrapped else payload
     model.load_state_dict(state_dict, strict=strict)
     model.to(device)
 
-    if optimizer is not None and isinstance(payload, dict) and "optimizer_state_dict" in payload:
+    if optimizer is not None and is_wrapped and "optimizer_state_dict" in payload:
         optimizer.load_state_dict(payload["optimizer_state_dict"])
 
     meta = {}
-    if isinstance(payload, dict):
+    if is_wrapped:
         meta = {k: v for k, v in payload.items()
                 if k not in ("model_state_dict", "optimizer_state_dict")}
     return model, meta

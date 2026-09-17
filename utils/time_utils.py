@@ -10,6 +10,8 @@ the raw integers are 23 apart. Encoding each as a (sin, cos) pair puts them on a
 circle so the model sees that adjacency.
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -51,8 +53,12 @@ def convert_to_datetime(data, column, unit="s"):
             unit = "ms"
         data[column] = pd.to_datetime(numeric, unit=unit, errors="coerce", utc=True)
     else:
-        # Fall back to string parsing for ISO-formatted dumps.
-        data[column] = pd.to_datetime(values, errors="coerce", utc=True)
+        # Fall back to string parsing for ISO-formatted dumps. pandas warns that
+        # it could not infer a single format; we already coerce failures to NaT
+        # and raise a clearer error downstream, so the warning is just noise.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            data[column] = pd.to_datetime(values, errors="coerce", utc=True)
 
     # Strip the tz so downstream .dt accessors and comparisons stay simple.
     if isinstance(data[column].dtype, pd.DatetimeTZDtype):
