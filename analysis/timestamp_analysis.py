@@ -133,9 +133,13 @@ def plot_weekly_heatmap(data, output_dir=FIGURE_DIR):
     return path
 
 
-def plot_loss_curve(batch_losses, output_dir=FIGURE_DIR, window=25):
-    """Save the training loss trend with a moving average overlaid."""
-    from utils.loss_utils import moving_average
+def plot_loss_curve(batch_losses, output_dir=FIGURE_DIR, window=None):
+    """Save the training loss trend with a moving average overlaid.
+
+    `window=None` sizes the smoothing to the series, so a short run does not ask
+    for a window wider than the data it has.
+    """
+    from utils.loss_utils import moving_average, smooth_for_plot
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -143,7 +147,10 @@ def plot_loss_curve(batch_losses, output_dir=FIGURE_DIR, window=25):
     fig, ax = plt.subplots(figsize=(9, 4))
     ax.plot(batch_losses, color="#B0B0C0", linewidth=0.8, label="Batch loss")
 
-    smoothed = moving_average(batch_losses, window_size=window)
+    if window is None:
+        smoothed, window = smooth_for_plot(batch_losses)
+    else:
+        smoothed = moving_average(batch_losses, window_size=window)
     if len(smoothed):
         offset = len(batch_losses) - len(smoothed)
         ax.plot(range(offset, len(batch_losses)), smoothed, color="#C44E52",

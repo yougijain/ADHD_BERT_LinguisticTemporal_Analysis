@@ -293,8 +293,7 @@ def main(argv=None):
     )
 
     if history["batch_losses"]:
-        window = min(25, max(len(history["batch_losses"]) // 4, 1))
-        loss_figure = plot_loss_curve(history["batch_losses"], config.figure_dir, window)
+        loss_figure = plot_loss_curve(history["batch_losses"], config.figure_dir)
         print(f"Loss curve: {loss_figure}")
 
     print("\nFinal evaluation")
