@@ -35,6 +35,7 @@ from analysis.timestamp_analysis import (  # noqa: E402
     summarize_temporal,
 )
 from data.data_loader import build_dataloaders, split_indices  # noqa: E402
+from data.schema import describe_schema, normalize_columns  # noqa: E402
 from data.preprocess import (  # noqa: E402
     batch_tokenize,
     build_labels,
@@ -78,6 +79,12 @@ def prepare_frame(config, run_analysis=True):
         )
     data = pd.read_csv(config.dataset_path)
     print(f"  {len(data)} raw rows, columns: {list(data.columns)}")
+
+    # Map whatever the corpus calls its columns onto the names every module
+    # below refers to. Explicit --column-map wins; inference only fills columns
+    # that are genuinely absent.
+    data = normalize_columns(data, config.column_map)
+    print(describe_schema(data))
 
     data = clean_dataset(data, min_tokens=config.min_tokens)
 
@@ -267,6 +274,11 @@ def parse_args(argv=None):
                             help="Use (and generate if missing) the synthetic sample dataset.")
     data_group.add_argument("--max-rows", type=int, default=0,
                             help="Cap the number of rows used. 0 uses everything.")
+    data_group.add_argument("--column-map", default="",
+                            help="Map your CSV's columns onto the ones the pipeline "
+                                 "expects, as canonical=source pairs, e.g. "
+                                 "'selftext=body,created_utc=creation_date'. "
+                                 "Unmapped columns are inferred from known aliases.")
     data_group.add_argument("--label-strategy", default="median",
                             choices=["median", "positive", "threshold"],
                             help="How to turn score into a binary label.")
@@ -328,6 +340,7 @@ def main(argv=None):
         label_strategy=args.label_strategy,
         split_strategy=args.split_strategy,
         max_rows=args.max_rows,
+        column_map=args.column_map,
         model_name=args.model_name,
         max_length=args.max_length,
         use_temporal_features=not args.no_temporal,

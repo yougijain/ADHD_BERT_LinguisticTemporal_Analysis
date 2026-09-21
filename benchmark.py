@@ -31,6 +31,7 @@ def _build_config(args, use_temporal):
         label_strategy=args.label_strategy,
         split_strategy=args.split_strategy,
         max_rows=args.max_rows,
+        column_map=args.column_map,
         model_name=args.model_name,
         max_length=args.max_length,
         use_temporal_features=use_temporal,
@@ -153,6 +154,8 @@ def parse_args(argv=None):
     parser.add_argument("--dataset", default=None)
     parser.add_argument("--synthetic", action="store_true")
     parser.add_argument("--max-rows", type=int, default=0)
+    parser.add_argument("--column-map", default="",
+                        help="canonical=source pairs, e.g. 'selftext=body'.")
     parser.add_argument("--label-strategy", default="median",
                         choices=["median", "positive", "threshold"])
     parser.add_argument("--split-strategy", default="random",
