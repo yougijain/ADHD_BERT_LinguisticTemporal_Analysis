@@ -53,7 +53,8 @@ majority-class baseline. The test suite runs in a few seconds with no network.
 | Descriptive analysis + figures | Done |
 | Error analysis (slices, calibration, model comparison) | Done |
 | Corpus fetcher + schema adapter (Stack Exchange, CC BY-SA 4.0) | Done |
-| Test suite (274 tests, offline) | Done |
+| One-command experiment runner + generated `RESULTS.md` | Done |
+| Test suite (322 tests, offline) | Done |
 | Results on a real corpus | **Not run — see [Dataset](#dataset)** |
 
 That last row is the honest one. Everything below the line marked *sample data*
@@ -143,9 +144,13 @@ outputs/
 ├── figures/loss_curve.png                  # batch loss + moving average
 ├── figures/error_rate_by_hour.png          # where the model fails
 ├── figures/calibration.png                 # confidence vs observed accuracy
+├── error_analysis.json                     # slices, ECE, calibration bins
+├── feature_set_comparison.json             # fixed vs broken, example by example
 ├── results.json                            # config, metrics, history, correlations
 ├── results_tfidf.json                      # baseline metrics and top features
 └── results_embeddings.json                 # frozen-embedding row, when run
+
+RESULTS.md                                  # the document, generated from the above
 ```
 
 ## Dataset
@@ -238,43 +243,69 @@ rows a real dump is full of, so the cleaning step has something to remove. It is
 fabricated text. It is not data about anyone, and nothing measured on it is a
 result.
 
-## Results on the sample data
+## Running the experiment
 
-> **Sample data.** Generated template text with a deliberately planted
-> time-of-day signal. These numbers demonstrate that the pipeline works end to
-> end and that the ablation is wired up correctly. They say nothing about real
-> posts, and they are not the project's result.
+One command, one seed, one split, straight through to the document:
 
-Full grid, `benchmark.py --synthetic --tiny-model --epochs 6 --learning-rate 1e-3`,
-majority-class baseline 0.500:
+```bash
+python -m data.fetch_dataset --site stackoverflow --rows 20000 --out datasets/posts.csv
+python run_experiment.py --dataset datasets/posts.csv --epochs 3 --embeddings
+```
 
-| Model | Features | Accuracy | Macro F1 | Lift |
-|---|---|---|---|---|
-| TF-IDF | text only | 0.5856 | 0.5850 | +0.0856 |
-| TF-IDF | text + temporal | **0.8243** | 0.8239 | +0.3243 |
-| BERT (tiny, random) | text only | 0.6081 | 0.6052 | +0.1081 |
-| BERT (tiny, random) | text + temporal | 0.6667 | 0.6657 | +0.1667 |
+It runs four steps and writes `RESULTS.md`:
 
-Two things to read off this, and one trap:
+1. `benchmark.py` — the grid → `outputs/benchmark.json`
+2. error analysis — slices, calibration → `outputs/error_analysis.json`
+3. `--compare-feature-sets` — fixed vs broken → `outputs/feature_set_comparison.json`
+4. `analysis.report` — the document
 
-**Temporal features help in both architectures** — +0.24 for the linear model,
-+0.06 for the neural one. That the gap appears on both is the structure the
-generator planted, recovered. On real data, whether it appears on both is the
-question.
+The offline smoke version, about a minute on CPU:
 
-**The linear baseline wins by a wide margin.** Do not read that as "TF-IDF beats
-BERT": the BERT row is a randomly initialised miniature model with no pretrained
-weights, because the environment it ran in could not reach huggingface.co. It is
-a plumbing check, not a competitor. Re-run without `--tiny-model` before drawing
-any conclusion — `benchmark.py` prints this caveat itself when it detects the
-tiny model.
+```bash
+python run_experiment.py --synthetic --skip-bert
+```
 
-The baseline's coefficients recover the planted structure directly: `hour_cos`
-at -1.41 and `hour_sin` at +1.37 dominate every word feature, with
-`is_late_night` at -0.48 — an evening bump and a late-night penalty, which is
-exactly what the generator plants. (In the synthetic data the clock is
-unambiguous because the generator defines it; on a real dump read these as UTC
-bands, per [Timezones](#timezones).)
+`bert-base-uncased`, `--split-strategy temporal`, `--label-strategy median`,
+3 epochs, `--max-length 256`, `--batch-size 16`, AMP on by default — a Colab T4
+is enough.
+
+### Nothing in the report is hand-typed
+
+A results table copied into a README goes stale on the next run and nobody
+notices, because a number that is slightly wrong looks exactly like a number
+that is right. `analysis/report.py` reads the artefacts and writes the whole
+document — grid, lift per cell, ECE, fixed-vs-broken counts, figures, the UTC
+caveat.
+
+It also **decides what happened** rather than leaving that to the writer:
+
+```
+## What happened
+
+TF-IDF beats BERT (0.8230 vs 0.6239). On short text with a few thousand rows
+this is a common and legitimate outcome, not a bug to tune away.
+
+The timestamp: helps.
+
+> Temporal verdict from McNemar's test on the paired predictions, not on the
+> accuracy difference.
+```
+
+"BERT won" is the least interesting outcome and the easiest to claim by
+eyeballing a table. The four readings the project cares about are selected by a
+function with a stated rule, and the report names which rule it used.
+
+**The temporal verdict uses McNemar's test**, which is the correct one for two
+classifiers scored over the same rows. A two-sample test on the two accuracies
+throws away the pairing — the cases both models get right carry no information
+about which is better — and the disagreements it *should* use are exactly the
+"fixed" and "broken" cells the feature-set comparison already produces. Below
+~25 discordant pairs the chi-square approximation is unreliable, so it falls
+back to an exact binomial.
+
+The model-vs-model verdict is weaker and says so: `benchmark.json` stores
+metrics rather than predictions, so that comparison falls back to overlapping
+confidence intervals.
 
 ## Error analysis
 
@@ -406,9 +437,11 @@ no pretrained knowledge, so its accuracy is not a result.
 .
 ├── main.py                        # CLI pipeline: load -> analyse -> train -> evaluate
 ├── benchmark.py                   # TF-IDF vs BERT x temporal grid, as one table
+├── run_experiment.py              # grid + error analysis + RESULTS.md, one command
 ├── analysis/
 │   ├── pattern_detection.py       # stylistic markers, crossed with posting hour
 │   ├── error_analysis.py          # error slices, calibration, model comparison
+│   ├── report.py                  # artefacts -> RESULTS.md, with the significance tests
 │   ├── timestamp_analysis.py      # temporal EDA and figures
 │   └── token_stats.py             # token-length distribution, truncation rates
 ├── data/
@@ -467,6 +500,54 @@ Then run the error analysis. Accuracy is one number; where a model fails is the
 part that decides whether it is usable, and it is usually the more interesting
 half of a write-up.
 
+## Why it is built this way
+
+The decisions a reviewer is most likely to ask about, and the answers.
+
+**Attention pooling over mean pooling** (fine-tuned path). Mean pooling weights
+every token equally, including the padding-adjacent filler that dominates a
+short post. Learned attention lets the classifier put weight where the signal
+is. It is a real parameter cost, so `--no-attention-pooling` measures whether
+it earned it rather than assuming.
+
+**Mean pooling, not attention or `[CLS]`** (frozen path). Opposite call, same
+reasoning. A frozen encoder's `[CLS]` vector only acquires meaning from task
+training, and there is none here; the sentence-transformer checkpoints were
+trained with mean pooling, so that is what reproduces them.
+
+**Warmup.** Adam's second-moment estimate is near-garbage for the first few
+hundred steps, so a full learning rate at step 0 takes large, badly-scaled steps
+through a pretrained encoder and undoes some of what it knows. Ramping over the
+first 10% keeps early updates small until the optimiser state is worth trusting.
+
+**AMP.** Forward and backward in fp16 with an fp32 master copy of the weights,
+and a loss scaler to stop small gradients flushing to zero. Roughly 2x
+throughput and half the activation memory on a modern GPU. It changes numerics —
+runs are not bitwise reproducible against an fp32 run — so `--no-amp` exists for
+when that matters more than speed.
+
+**Chronological split, by default.** The timestamp is a *feature*. A random
+split trains on posts from after the ones it validates on, so the model has seen
+the future of its own validation set — and since engagement trends drift, that
+leaks. `--split-strategy random` is right only when you care about linguistic
+content alone.
+
+**The 0.1 line on ECE.** Above it, a model saying 0.9 is not right 90% of the
+time, so the probabilities can rank posts but cannot be thresholded for a
+precision target. Below ~0.05 they are usable as probabilities. The line is a
+convention, not a law, and the report states the number next to it.
+
+**Accuracy printed beside a majority-class baseline.** On a 90/10 split, 90%
+accuracy is what you get by answering with the majority class every time.
+Reporting accuracy alone on an imbalanced target is how a model that learned
+nothing gets written up as a success. Lift at or below zero is the tell.
+
+**Why `--label-strategy positive` is kept but not used.** On platforms where
+posts start at a score of 1, `score > 0` puts over 90% of a dump in one class
+and the model learns to answer "1" every time — at, and not above, the majority
+baseline. It is in the repo because reproducing a degenerate baseline is how you
+demonstrate it is degenerate, not because it should be run.
+
 ## Scope and limits
 
 This predicts post engagement from text and a UTC timestamp. That is the whole
@@ -482,3 +563,44 @@ a model download, so you can audit exactly what is being counted.
 Engagement is also not quality. A score is a measure of what an audience
 rewarded at a particular hour on a particular platform, and a model that
 predicts it is modelling that audience's behaviour, not the merit of the writing.
+
+---
+
+# Appendix: the sample-data run
+
+
+> **Sample data.** Generated template text with a deliberately planted
+> time-of-day signal. These numbers demonstrate that the pipeline works end to
+> end and that the ablation is wired up correctly. They say nothing about real
+> posts, and they are not the project's result.
+
+Full grid, `benchmark.py --synthetic --tiny-model --epochs 6 --learning-rate 1e-3`,
+majority-class baseline 0.500:
+
+| Model | Features | Accuracy | Macro F1 | Lift |
+|---|---|---|---|---|
+| TF-IDF | text only | 0.5856 | 0.5850 | +0.0856 |
+| TF-IDF | text + temporal | **0.8243** | 0.8239 | +0.3243 |
+| BERT (tiny, random) | text only | 0.6081 | 0.6052 | +0.1081 |
+| BERT (tiny, random) | text + temporal | 0.6667 | 0.6657 | +0.1667 |
+
+Two things to read off this, and one trap:
+
+**Temporal features help in both architectures** — +0.24 for the linear model,
++0.06 for the neural one. That the gap appears on both is the structure the
+generator planted, recovered. On real data, whether it appears on both is the
+question.
+
+**The linear baseline wins by a wide margin.** Do not read that as "TF-IDF beats
+BERT": the BERT row is a randomly initialised miniature model with no pretrained
+weights, because the environment it ran in could not reach huggingface.co. It is
+a plumbing check, not a competitor. Re-run without `--tiny-model` before drawing
+any conclusion — `benchmark.py` prints this caveat itself when it detects the
+tiny model.
+
+The baseline's coefficients recover the planted structure directly: `hour_cos`
+at -1.41 and `hour_sin` at +1.37 dominate every word feature, with
+`is_late_night` at -0.48 — an evening bump and a late-night penalty, which is
+exactly what the generator plants. (In the synthetic data the clock is
+unambiguous because the generator defines it; on a real dump read these as UTC
+bands, per [Timezones](#timezones).)
