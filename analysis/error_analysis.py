@@ -21,6 +21,7 @@ What this module answers:
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -33,7 +34,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 from analysis.pattern_detection import MARKER_COLUMNS, add_marker_columns  # noqa: E402
 from data.data_loader import split_indices  # noqa: E402
 from data.preprocess import build_labels, clean_dataset  # noqa: E402
-from training.config import FIGURE_DIR, TEMPORAL_FEATURES, TIMESTAMP_COLUMN  # noqa: E402
+from training.config import (  # noqa: E402
+    FIGURE_DIR,
+    OUTPUT_DIR,
+    TEMPORAL_FEATURES,
+    TIMESTAMP_COLUMN,
+)
 from utils.time_utils import add_temporal_features, temporal_feature_matrix  # noqa: E402
 
 # A slice with a handful of rows produces a meaningless error rate -- 2 of 3
@@ -446,8 +452,50 @@ def print_report(frame, top_n=5):
     return {"summary": summary, "worst_slices": worst, "calibration": calibration}
 
 
+def report_to_json(report):
+    """Flatten print_report's output into something json.dump can take.
+
+    The report carries DataFrames, which exist to be printed. The report
+    generator needs numbers, and a results document assembled from scraped
+    stdout is a results document that breaks the next time a log line moves.
+    """
+    payload = {"summary": report.get("summary", {})}
+
+    calibration = report.get("calibration")
+    if calibration:
+        payload["ece"] = float(calibration["ece"])
+        table = calibration.get("table")
+        if table is not None:
+            payload["calibration_bins"] = [
+                {"bin": str(index), "count": int(row["count"]),
+                 "mean_confidence": _finite(row["mean_confidence"]),
+                 "accuracy": _finite(row["accuracy"]),
+                 "gap": _finite(row["gap"])}
+                for index, row in table.iterrows()
+            ]
+
+    worst = report.get("worst_slices")
+    if worst is not None and not worst.empty:
+        payload["worst_slices"] = [
+            {"column": str(row["column"]), "bucket": str(row["bucket"]),
+             "count": int(row["count"]), "error_rate": float(row["error_rate"])}
+            for _, row in worst.iterrows()
+        ]
+
+    if report.get("figures"):
+        payload["figures"] = list(report["figures"])
+    return payload
+
+
+def _finite(value):
+    """NaN is not valid JSON, and an empty calibration bin produces one."""
+    value = float(value)
+    return None if np.isnan(value) or np.isinf(value) else value
+
+
 def analyse_dataset(dataset_path, label_strategy="median", split_strategy="random",
-                    seed=42, val_split=0.2, output_dir=FIGURE_DIR, max_rows=0):
+                    seed=42, val_split=0.2, output_dir=FIGURE_DIR, max_rows=0,
+                    json_out=None):
     """Fit the TF-IDF baseline and run the full error analysis on its validation split.
 
     Uses the baseline rather than the neural model because it trains in seconds
@@ -497,12 +545,19 @@ def analyse_dataset(dataset_path, label_strategy="median", split_strategy="rando
         print(f"  {path}")
 
     report["figures"] = [str(p) for p in figures]
+
+    if json_out:
+        json_out = Path(json_out)
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        json_out.write_text(json.dumps(report_to_json(report), indent=2) + "\n")
+        print(f"  {json_out}")
+
     return frame, report
 
 
 def compare_feature_sets(dataset_path, label_strategy="median",
                          split_strategy="random", seed=42, val_split=0.2,
-                         max_rows=0):
+                         max_rows=0, json_out=None):
     """Error analysis of the temporal ablation: same model, with and without.
 
     The benchmark says the temporal features raise accuracy. It does not say
@@ -570,7 +625,17 @@ def compare_feature_sets(dataset_path, label_strategy="median",
         print(f"\n  {name}: error rate {summary['error_rate']:.1%} "
               f"(FP {summary['false_positive']}, FN {summary['false_negative']})")
 
-    return {"comparison": comparison, "summaries": summaries, "frames": frames}
+    result = {"comparison": comparison, "summaries": summaries, "frames": frames}
+
+    if json_out:
+        json_out = Path(json_out)
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        # `frames` holds DataFrames for the caller; only the counts persist.
+        json_out.write_text(json.dumps(
+            {"comparison": comparison, "summaries": summaries}, indent=2) + "\n")
+        print(f"\n  {json_out}")
+
+    return result
 
 
 def main():
@@ -588,16 +653,23 @@ def main():
     parser.add_argument("--compare-feature-sets", action="store_true",
                         help="Compare the text-only and text+temporal runs "
                              "example by example instead of analysing one.")
+    parser.add_argument("--json-out", default=None,
+                        help="Also write the numbers as JSON, for analysis.report. "
+                             "Defaults to outputs/error_analysis.json (or "
+                             "feature_set_comparison.json with --compare-feature-sets).")
     args = parser.parse_args()
 
     if args.compare_feature_sets:
+        json_out = args.json_out or OUTPUT_DIR / "feature_set_comparison.json"
         compare_feature_sets(args.dataset, label_strategy=args.label_strategy,
                              split_strategy=args.split_strategy, seed=args.seed,
-                             max_rows=args.max_rows)
+                             max_rows=args.max_rows, json_out=json_out)
     else:
+        json_out = args.json_out or OUTPUT_DIR / "error_analysis.json"
         analyse_dataset(args.dataset, label_strategy=args.label_strategy,
                         split_strategy=args.split_strategy, seed=args.seed,
-                        output_dir=args.output_dir, max_rows=args.max_rows)
+                        output_dir=args.output_dir, max_rows=args.max_rows,
+                        json_out=json_out)
 
 
 if __name__ == "__main__":
