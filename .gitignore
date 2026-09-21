@@ -1,5 +1,6 @@
 # Virtual environments
 adhd_env/
+env/
 venv/
 .venv/
 
@@ -9,6 +10,11 @@ venv/
 .pytest_cache/
 
 # Large artifacts
-datasets/*.csv
 *.pth
 outputs/
+
+# Corpora are large and, depending on the source, not ours to redistribute.
+# The provenance sidecars are neither: they are a few hundred bytes and they
+# are the record of where the data came from, so they are committed.
+datasets/*.csv
+!datasets/*.provenance.json
