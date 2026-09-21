@@ -60,6 +60,9 @@ class Config:
     # separate knob from model_name -- the point of that row is to hold
     # task-specific training fixed while varying the representation.
     encoder_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # Model for the zero-shot LLM row. Scaffolded, opt-in, and billed per row
+    # of the validation split -- see models/llm_baseline.py.
+    llm_model: str = "claude-opus-5"
     max_length: int = 256
     tokenize_batch_size: int = 512
 
