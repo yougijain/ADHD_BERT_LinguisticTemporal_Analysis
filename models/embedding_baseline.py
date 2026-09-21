@@ -67,8 +67,22 @@ def encode_texts(texts, model_name=DEFAULT_ENCODER, batch_size=64, max_length=25
     from models.model_utils import resolve_device
 
     device = resolve_device(device or "auto")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    encoder = AutoModel.from_pretrained(model_name).to(device).eval()
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        encoder = AutoModel.from_pretrained(model_name).to(device).eval()
+    except Exception as exc:  # noqa: BLE001 - hub errors are many and unstable
+        # This row is the one part of the grid that needs a download, and it
+        # fails mid-run after the linear half has already succeeded. A raw
+        # transport traceback there reads like a bug in the pipeline; say what
+        # actually happened and what to do instead.
+        raise RuntimeError(
+            f"Could not load the encoder '{model_name}'. This row needs to "
+            "download it from huggingface.co, which is not reachable here.\n"
+            "  * Drop --embeddings to run the grid without this row.\n"
+            "  * Or pre-download the encoder on a networked machine and pass "
+            "the local path with --encoder-name.\n"
+            f"Original error: {type(exc).__name__}: {exc}"
+        ) from exc
 
     vectors = []
     total = (len(texts) + batch_size - 1) // batch_size

@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from data.preprocess import build_local_tokenizer, clean_dataset, get_tokenizer
+from data.schema import read_dataset
 from training.config import TEXT_COLUMN
 
 
@@ -52,10 +53,11 @@ def token_length_stats(texts, model_name="bert-base-uncased", tokenizer=None,
     return stats
 
 
-def run(dataset_path, model_name="bert-base-uncased", offline=False, column=None):
+def run(dataset_path, model_name="bert-base-uncased", offline=False, column=None,
+        column_map=None):
     """Print token-length statistics for a dataset."""
     print(f"Loading {dataset_path}...")
-    data = pd.read_csv(dataset_path)
+    data = read_dataset(dataset_path, column_map)
     data = clean_dataset(data)
     column = column or "clean_text"
     texts = data[column if column in data.columns else TEXT_COLUMN].tolist()
@@ -95,8 +97,11 @@ def main():
     parser.add_argument("--offline", action="store_true",
                         help="Use a corpus-trained tokenizer instead of downloading one.")
     parser.add_argument("--column", default=None, help="Text column to measure.")
+    parser.add_argument("--column-map", default="",
+                        help="canonical=source pairs, e.g. 'selftext=body'.")
     args = parser.parse_args()
-    run(args.dataset, args.model_name, args.offline, args.column)
+    run(args.dataset, args.model_name, args.offline, args.column,
+        column_map=args.column_map)
 
 
 if __name__ == "__main__":

@@ -144,3 +144,56 @@ class TestDescribeSchema:
         frame = pd.DataFrame({"selftext": ["a", "b"], "score": [-3, 40],
                               "created_utc": [1, 2]})
         assert "[-3, 40]" in describe_schema(frame)
+
+
+class TestReadDataset:
+    """Every entry point loads corpora through this, so it is the regression
+    guard for the bug where only main.py normalised and the analysis modules
+    did not -- a real corpus got through the grid and died in step 2."""
+
+    def _write(self, tmp_path, **columns):
+        import pandas as pd
+        path = tmp_path / "corpus.csv"
+        pd.DataFrame(columns).to_csv(path, index=False)
+        return path
+
+    def test_reads_and_normalises_in_one_call(self, tmp_path):
+        from data.schema import read_dataset
+        path = self._write(tmp_path, body=["hello there"], score=[3],
+                           creation_date=[1700000000])
+        frame = read_dataset(path, verbose=False)
+        assert frame["selftext"].iloc[0] == "hello there"
+        assert frame["created_utc"].iloc[0] == 1700000000
+
+    def test_explicit_map_is_honoured(self, tmp_path):
+        from data.schema import read_dataset
+        path = self._write(tmp_path, summary=["x"], upvotes=[1],
+                           created_utc=[1700000000])
+        frame = read_dataset(path, "selftext=summary,score=upvotes", verbose=False)
+        assert frame["selftext"].iloc[0] == "x"
+        assert frame["score"].iloc[0] == 1
+
+    def test_missing_column_still_raises(self, tmp_path):
+        from data.schema import read_dataset
+        path = self._write(tmp_path, body=["x"], score=[1])
+        with pytest.raises(KeyError, match="created_utc"):
+            read_dataset(path, verbose=False)
+
+
+class TestEveryEntryPointNormalises:
+    """A bare pd.read_csv anywhere reintroduces the step-2 crash."""
+
+    def test_no_module_reads_a_corpus_without_normalising(self):
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parents[1]
+        offenders = []
+        for path in list(root.glob("*.py")) + list(root.glob("analysis/*.py")) \
+                + list(root.glob("data/*.py")):
+            if path.name in ("schema.py", "inspect_dataset.py"):
+                continue  # the reader itself, and the raw-CSV inspector
+            if "pd.read_csv" in path.read_text():
+                offenders.append(str(path.relative_to(root)))
+        assert not offenders, (
+            f"{offenders} read a CSV directly. Use data.schema.read_dataset so "
+            "corpora with non-canonical column names load everywhere."
+        )

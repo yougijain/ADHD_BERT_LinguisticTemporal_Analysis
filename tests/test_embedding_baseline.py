@@ -202,3 +202,22 @@ class TestDescribeEncoder:
         described = model.describe_encoder()
         assert "injected" in described
         assert DEFAULT_ENCODER not in described
+
+
+class TestEncoderLoadFailure:
+    """This row is the only one needing a download, and it fails mid-grid."""
+
+    def test_unreachable_encoder_raises_an_actionable_error(self, monkeypatch):
+        from models import embedding_baseline
+
+        def boom(*args, **kwargs):
+            raise OSError("proxy said no")
+
+        monkeypatch.setattr("transformers.AutoTokenizer.from_pretrained", boom)
+        with pytest.raises(RuntimeError) as excinfo:
+            embedding_baseline.encode_texts(["some text"], verbose=False)
+
+        message = str(excinfo.value)
+        assert "--embeddings" in message      # how to skip the row
+        assert "--encoder-name" in message    # how to point at a local copy
+        assert "proxy said no" in message     # the original cause survives

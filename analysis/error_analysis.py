@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from analysis.pattern_detection import MARKER_COLUMNS, add_marker_columns  # noqa: E402
 from data.data_loader import split_indices  # noqa: E402
 from data.preprocess import build_labels, clean_dataset  # noqa: E402
+from data.schema import read_dataset  # noqa: E402
 from training.config import (  # noqa: E402
     FIGURE_DIR,
     OUTPUT_DIR,
@@ -495,7 +496,7 @@ def _finite(value):
 
 def analyse_dataset(dataset_path, label_strategy="median", split_strategy="random",
                     seed=42, val_split=0.2, output_dir=FIGURE_DIR, max_rows=0,
-                    json_out=None):
+                    json_out=None, column_map=None):
     """Fit the TF-IDF baseline and run the full error analysis on its validation split.
 
     Uses the baseline rather than the neural model because it trains in seconds
@@ -508,7 +509,7 @@ def analyse_dataset(dataset_path, label_strategy="median", split_strategy="rando
     from models.tfidf_baseline import TfidfBaseline
 
     print(f"Loading {dataset_path}...")
-    data = clean_dataset(pd.read_csv(dataset_path))
+    data = clean_dataset(read_dataset(dataset_path, column_map))
     data = add_temporal_features(data, TIMESTAMP_COLUMN)
     data = add_marker_columns(data)
 
@@ -557,7 +558,7 @@ def analyse_dataset(dataset_path, label_strategy="median", split_strategy="rando
 
 def compare_feature_sets(dataset_path, label_strategy="median",
                          split_strategy="random", seed=42, val_split=0.2,
-                         max_rows=0, json_out=None):
+                         max_rows=0, json_out=None, column_map=None):
     """Error analysis of the temporal ablation: same model, with and without.
 
     The benchmark says the temporal features raise accuracy. It does not say
@@ -571,7 +572,7 @@ def compare_feature_sets(dataset_path, label_strategy="median",
     from models.tfidf_baseline import TfidfBaseline
 
     print(f"Loading {dataset_path}...")
-    data = clean_dataset(pd.read_csv(dataset_path))
+    data = clean_dataset(read_dataset(dataset_path, column_map))
     data = add_temporal_features(data, TIMESTAMP_COLUMN)
     data = add_marker_columns(data)
 
@@ -653,6 +654,8 @@ def main():
     parser.add_argument("--compare-feature-sets", action="store_true",
                         help="Compare the text-only and text+temporal runs "
                              "example by example instead of analysing one.")
+    parser.add_argument("--column-map", default="",
+                        help="canonical=source pairs, e.g. 'selftext=body'.")
     parser.add_argument("--json-out", default=None,
                         help="Also write the numbers as JSON, for analysis.report. "
                              "Defaults to outputs/error_analysis.json (or "
@@ -663,13 +666,14 @@ def main():
         json_out = args.json_out or OUTPUT_DIR / "feature_set_comparison.json"
         compare_feature_sets(args.dataset, label_strategy=args.label_strategy,
                              split_strategy=args.split_strategy, seed=args.seed,
-                             max_rows=args.max_rows, json_out=json_out)
+                             max_rows=args.max_rows, json_out=json_out,
+                             column_map=args.column_map)
     else:
         json_out = args.json_out or OUTPUT_DIR / "error_analysis.json"
         analyse_dataset(args.dataset, label_strategy=args.label_strategy,
                         split_strategy=args.split_strategy, seed=args.seed,
                         output_dir=args.output_dir, max_rows=args.max_rows,
-                        json_out=json_out)
+                        json_out=json_out, column_map=args.column_map)
 
 
 if __name__ == "__main__":

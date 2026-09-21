@@ -35,7 +35,7 @@ from analysis.timestamp_analysis import (  # noqa: E402
     summarize_temporal,
 )
 from data.data_loader import build_dataloaders, split_indices  # noqa: E402
-from data.schema import describe_schema, normalize_columns  # noqa: E402
+from data.schema import describe_schema, read_dataset  # noqa: E402
 from data.preprocess import (  # noqa: E402
     batch_tokenize,
     build_labels,
@@ -81,13 +81,11 @@ def prepare_frame(config, run_analysis=True):
             f"No dataset at {config.dataset_path}. Either point --dataset at a "
             "real CSV, or pass --synthetic to generate a sample one."
         )
-    data = pd.read_csv(config.dataset_path)
-    print(f"  {len(data)} raw rows, columns: {list(data.columns)}")
-
     # Map whatever the corpus calls its columns onto the names every module
     # below refers to. Explicit --column-map wins; inference only fills columns
     # that are genuinely absent.
-    data = normalize_columns(data, config.column_map)
+    data = read_dataset(config.dataset_path, config.column_map)
+    print(f"  {len(data)} rows")
     print(describe_schema(data))
 
     data = clean_dataset(data, min_tokens=config.min_tokens)

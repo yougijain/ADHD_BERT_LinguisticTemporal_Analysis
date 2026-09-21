@@ -164,6 +164,27 @@ def normalize_columns(frame, column_map=None, verbose=True):
     return frame
 
 
+def read_dataset(path, column_map=None, verbose=True):
+    """Read a CSV and normalise its columns. The only way in.
+
+    Every entry point that loads a corpus goes through here. Reading with a
+    bare `pd.read_csv` works right up until someone points the tool at a real
+    dump, and then it fails deep inside cleaning with a message about a column
+    the CSV never claimed to have. One reader means one behaviour, and no sixth
+    call site drifting out of sync with the other five.
+
+    Args:
+        path: CSV to read.
+        column_map (dict | str | None): Explicit mapping, applied before
+            inference. See normalize_columns.
+        verbose (bool): Print the renames that were applied.
+    Returns:
+        pd.DataFrame: with the canonical column names.
+    """
+    frame = pd.read_csv(path)
+    return normalize_columns(frame, column_map, verbose=verbose)
+
+
 def describe_schema(frame):
     """One-line-per-column summary of a normalised frame, for the run log."""
     lines = []
