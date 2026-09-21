@@ -43,6 +43,10 @@ from data.preprocess import (  # noqa: E402
     clean_dataset,
 )
 from models.bert_temporal_model import BertTemporalClassifier  # noqa: E402
+from models.embedding_baseline import (  # noqa: E402
+    DEFAULT_ENCODER,
+    EmbeddingBaseline,
+)
 from models.tfidf_baseline import TfidfBaseline, print_top_features  # noqa: E402
 from models.model_utils import (  # noqa: E402
     describe_model,
@@ -181,11 +185,23 @@ def load_and_prepare_data(config, run_analysis=True, offline_tokenizer=False):
     return train_loader, val_loader, info
 
 
-def run_tfidf_baseline(config, run_analysis=True, show_features=True):
-    """Train and evaluate the TF-IDF baseline on the same data and split.
+def run_sklearn_baseline(config, model, label, run_analysis=True):
+    """Fit and score any sklearn-style baseline on the shared rows and split.
 
+    The TF-IDF and frozen-embedding baselines differ only in how they turn text
+    into a matrix, so everything around that -- the rows, the labels, the split
+    indices, the metrics -- lives here. Two models that were prepared
+    differently are not a comparison, and the cheapest way to guarantee they
+    were not is to have one code path.
+
+    Args:
+        config (Config): Run configuration.
+        model: Anything exposing fit/evaluate/num_features, i.e. TfidfBaseline
+            or EmbeddingBaseline.
+        label (str): Name for the log line.
+        run_analysis (bool): Produce the descriptive analysis and figures.
     Returns:
-        dict: config, data info, metrics, and the top signed features.
+        tuple: (results_dict, fitted_model)
     """
     data, labels, temporal_matrix, info = prepare_frame(config, run_analysis)
     texts = data["clean_text"].tolist()
@@ -198,11 +214,7 @@ def run_tfidf_baseline(config, run_analysis=True, show_features=True):
     def take(values, idx):
         return None if values is None else values[idx]
 
-    print("\nFitting TF-IDF baseline...")
-    model = TfidfBaseline(
-        use_temporal_features=config.use_temporal_features,
-        seed=config.seed,
-    )
+    print(f"\nFitting {label}...")
     model.fit(
         [texts[i] for i in train_idx],
         labels[train_idx],
@@ -219,12 +231,56 @@ def run_tfidf_baseline(config, run_analysis=True, show_features=True):
 
     results = {"config": config.to_dict(), "data": info, "final_metrics": metrics,
                "num_features": int(model.num_features)}
+    return results, model
+
+
+def run_tfidf_baseline(config, run_analysis=True, show_features=True):
+    """Train and evaluate the TF-IDF baseline on the same data and split.
+
+    Returns:
+        dict: config, data info, metrics, and the top signed features.
+    """
+    model = TfidfBaseline(
+        use_temporal_features=config.use_temporal_features,
+        seed=config.seed,
+    )
+    results, model = run_sklearn_baseline(config, model, "TF-IDF baseline",
+                                          run_analysis)
 
     if show_features:
         top = model.top_features(n=15, temporal_feature_names=config.temporal_features)
         print_top_features(top, n=10)
         results["top_features"] = top
 
+    return results, model
+
+
+def run_embedding_baseline(config, run_analysis=True, embed_fn=None):
+    """Train and evaluate the frozen-embedding baseline on the same split.
+
+    The middle of the grid: pretrained semantics without task-specific
+    training, so a gap between this row and fine-tuned BERT is attributable to
+    the fine-tuning rather than to the encoder.
+
+    Args:
+        embed_fn (callable | None): `texts -> (n, d)` array, bypassing the real
+            encoder. Used by the tests; also the hook for cached embeddings.
+    Returns:
+        tuple: (results_dict, fitted_model)
+    """
+    model = EmbeddingBaseline(
+        model_name=config.encoder_name,
+        use_temporal_features=config.use_temporal_features,
+        max_length=config.max_length,
+        device=config.device,
+        seed=config.seed,
+        embed_fn=embed_fn,
+    )
+    results, model = run_sklearn_baseline(
+        config, model, f"frozen embeddings ({config.encoder_name})", run_analysis
+    )
+    results["encoder_name"] = model.describe_encoder()
+    results["embedding_dim"] = model.embedding_dim
     return results, model
 
 
@@ -287,9 +343,15 @@ def parse_args(argv=None):
                             help="Chronological or shuffled train/val split.")
 
     model_group = parser.add_argument_group("model")
-    model_group.add_argument("--model", default="bert", choices=["bert", "tfidf"],
-                             help="Which classifier to run. 'tfidf' is the "
-                                  "linear baseline; it ignores the BERT flags.")
+    model_group.add_argument("--model", default="bert",
+                             choices=["bert", "tfidf", "embeddings"],
+                             help="Which classifier to run. 'tfidf' is the linear "
+                                  "baseline and 'embeddings' is frozen sentence "
+                                  "vectors plus logistic regression; both ignore "
+                                  "the BERT flags.")
+    model_group.add_argument("--encoder-name", default=DEFAULT_ENCODER,
+                             help="Encoder for --model embeddings. Frozen, never "
+                                  "fine-tuned.")
     model_group.add_argument("--model-name", default="bert-base-uncased")
     model_group.add_argument("--max-length", type=int, default=256)
     model_group.add_argument("--no-temporal", action="store_true",
@@ -342,6 +404,7 @@ def main(argv=None):
         max_rows=args.max_rows,
         column_map=args.column_map,
         model_name=args.model_name,
+        encoder_name=args.encoder_name,
         max_length=args.max_length,
         use_temporal_features=not args.no_temporal,
         use_attention_pooling=not args.no_attention_pooling,
@@ -361,10 +424,14 @@ def main(argv=None):
     else:
         print("Temporal branch: OFF (text-only ablation)")
 
-    if args.model == "tfidf":
-        results, _ = run_tfidf_baseline(config, run_analysis=not args.skip_analysis)
+    if args.model in ("tfidf", "embeddings"):
+        if args.model == "tfidf":
+            results, _ = run_tfidf_baseline(config, run_analysis=not args.skip_analysis)
+        else:
+            results, _ = run_embedding_baseline(config,
+                                                run_analysis=not args.skip_analysis)
         metrics_path = save_metrics(
-            results, config.checkpoint_dir.parent / "results_tfidf.json"
+            results, config.checkpoint_dir.parent / f"results_{args.model}.json"
         )
         print(f"\nResults written to {metrics_path}")
         _report_lift(results["final_metrics"])
