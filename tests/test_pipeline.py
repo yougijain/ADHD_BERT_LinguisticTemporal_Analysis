@@ -24,7 +24,7 @@ from analysis.token_stats import token_length_stats
 from data.data_loader import build_dataloaders
 from data.make_sample_data import generate_dataset
 from data.preprocess import batch_tokenize, build_labels
-from models.bert_adhd_model import BertTemporalClassifier
+from models.bert_temporal_model import BertTemporalClassifier
 from models.model_utils import set_seed
 from training.evaluate import evaluate_model, predict
 from training.train import build_optimizer, build_scheduler, train_model

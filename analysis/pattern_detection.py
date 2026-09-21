@@ -1,15 +1,19 @@
-"""Linguistic marker extraction and linguistic-x-temporal cross analysis.
+"""Stylistic marker extraction and style-x-timing cross analysis.
 
-The other half of the project name. Where timestamp_analysis asks *when* people
-post, this asks *how they write*, and then crosses the two: does the language of
-a post submitted at 03:00 UTC differ measurably from one at 15:00 UTC?
+The text half of the question. Where timestamp_analysis asks *when* a post goes
+up, this asks *how it is written*, and then crosses the two: does the language
+of a post submitted at 03:00 UTC differ measurably from one at 15:00 UTC?
+
+That matters for the ablation. If style and posting hour are entangled, a
+temporal feature can look predictive while really standing in for wording, and
+the text-only vs text+temporal comparison needs to know which it is.
 
 Note the UTC qualifier -- it is not the same question as "3am versus 3pm for the
 person writing", which this data cannot answer. See utils.time_utils.
 
 Markers are lexicon and regex based on purpose -- no spacy or nltk model
-download, so this runs on a fresh clone. They are crude proxies for writing
-style, not clinical indicators, and nothing here diagnoses anything.
+download, so this runs on a fresh clone. They are crude, auditable proxies for
+writing style and nothing more.
 """
 
 import argparse
@@ -31,12 +35,12 @@ LEXICONS = {
                  "didnt", "wont", "wouldnt", "nothing", "nobody"},
     "absolutist": {"always", "never", "completely", "totally", "constantly",
                    "everything", "nothing", "every", "entirely", "impossible"},
-    "executive_function": {"forgot", "forget", "forgetting", "distracted",
-                           "procrastinate", "procrastinating", "focus", "focusing",
-                           "overwhelmed", "deadline", "late", "remind", "reminder",
-                           "task", "tasks", "organize", "routine"},
-    "sleep": {"sleep", "asleep", "awake", "insomnia", "tired", "exhausted",
-              "bed", "night", "nights", "3am", "2am", "am"},
+    "task_language": {"forgot", "forget", "forgetting", "distracted",
+                      "procrastinate", "procrastinating", "focus", "focusing",
+                      "overwhelmed", "deadline", "late", "remind", "reminder",
+                      "task", "tasks", "organize", "routine"},
+    "time_of_day": {"sleep", "asleep", "awake", "insomnia", "tired", "exhausted",
+                    "bed", "night", "nights", "morning", "tonight", "3am", "2am", "am"},
     "hedging": {"maybe", "probably", "kind", "sort", "guess", "somewhat",
                 "might", "perhaps", "possibly"},
 }

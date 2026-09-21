@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from models.attention_layer import AttentionPooling, masked_mean_pool
-from models.bert_adhd_model import BertTemporalClassifier
+from models.bert_temporal_model import BertTemporalClassifier
 from models.model_utils import (
     count_parameters,
     load_checkpoint,

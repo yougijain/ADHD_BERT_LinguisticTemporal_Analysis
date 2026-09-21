@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 import torch
 
-from data.data_loader import ADHDTextDataset, build_dataloaders, split_indices
+from data.data_loader import PostDataset, build_dataloaders, split_indices
 
 
 @pytest.fixture
@@ -22,21 +22,21 @@ def encodings():
     }
 
 
-class TestADHDTextDataset:
+class TestPostDataset:
     def test_length(self, encodings):
-        assert len(ADHDTextDataset(encodings)) == 10
+        assert len(PostDataset(encodings)) == 10
 
     def test_item_without_labels_has_no_label_key(self, encodings):
-        assert "labels" not in ADHDTextDataset(encodings)[0]
+        assert "labels" not in PostDataset(encodings)[0]
 
     def test_item_with_labels(self, encodings):
-        item = ADHDTextDataset(encodings, labels=list(range(10)))[3]
+        item = PostDataset(encodings, labels=list(range(10)))[3]
         assert item["labels"].item() == 3
         assert item["labels"].dtype == torch.long
 
     def test_temporal_features_are_carried_through(self, encodings):
         features = np.random.randn(10, 8).astype("float32")
-        item = ADHDTextDataset(encodings, labels=[0] * 10, temporal_features=features)[0]
+        item = PostDataset(encodings, labels=[0] * 10, temporal_features=features)[0]
         assert item["temporal_features"].shape == (8,)
         assert item["temporal_features"].dtype == torch.float32
 
@@ -44,31 +44,31 @@ class TestADHDTextDataset:
         # The exact input the old test file used.
         ragged = {"input_ids": [[101, 2009, 2001, 1037, 3867, 102], [101, 1045, 2293, 2023, 102]]}
         with pytest.raises(ValueError, match="padding"):
-            ADHDTextDataset(ragged)
+            PostDataset(ragged)
 
     def test_label_length_mismatch_raises(self, encodings):
         with pytest.raises(ValueError, match="same length"):
-            ADHDTextDataset(encodings, labels=[0, 1])
+            PostDataset(encodings, labels=[0, 1])
 
     def test_temporal_length_mismatch_raises(self, encodings):
         with pytest.raises(ValueError, match="align"):
-            ADHDTextDataset(encodings, temporal_features=np.zeros((3, 8)))
+            PostDataset(encodings, temporal_features=np.zeros((3, 8)))
 
     def test_missing_input_ids_raises(self):
         with pytest.raises(KeyError, match="input_ids"):
-            ADHDTextDataset({"attention_mask": torch.ones(2, 4)})
+            PostDataset({"attention_mask": torch.ones(2, 4)})
 
     def test_num_temporal_features_property(self, encodings):
-        assert ADHDTextDataset(encodings).num_temporal_features == 0
-        with_features = ADHDTextDataset(encodings, temporal_features=np.zeros((10, 5)))
+        assert PostDataset(encodings).num_temporal_features == 0
+        with_features = PostDataset(encodings, temporal_features=np.zeros((10, 5)))
         assert with_features.num_temporal_features == 5
 
     def test_1d_temporal_features_are_promoted(self, encodings):
-        dataset = ADHDTextDataset(encodings, temporal_features=np.arange(10))
+        dataset = PostDataset(encodings, temporal_features=np.arange(10))
         assert dataset.num_temporal_features == 1
 
     def test_getitem_does_not_alias_the_source(self, encodings):
-        dataset = ADHDTextDataset(encodings)
+        dataset = PostDataset(encodings)
         item = dataset[0]
         item["input_ids"][0] = 999
         assert dataset.encodings["input_ids"][0, 0] != 999

@@ -4,8 +4,8 @@ Examples:
     # Train on the bundled synthetic data (generates it if missing).
     python main.py --synthetic --epochs 2
 
-    # Train on a real dump.
-    python main.py --dataset datasets/ADHD.csv --epochs 3
+    # Train on a real corpus.
+    python main.py --dataset datasets/posts.csv --epochs 3
 
     # Text-only ablation, to measure what the temporal branch is worth.
     python main.py --synthetic --no-temporal
@@ -41,7 +41,7 @@ from data.preprocess import (  # noqa: E402
     build_local_tokenizer,
     clean_dataset,
 )
-from models.bert_adhd_model import BertTemporalClassifier  # noqa: E402
+from models.bert_temporal_model import BertTemporalClassifier  # noqa: E402
 from models.tfidf_baseline import TfidfBaseline, print_top_features  # noqa: E402
 from models.model_utils import (  # noqa: E402
     describe_model,
@@ -257,7 +257,7 @@ def _report_lift(metrics):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="ADHD linguistic-temporal classification pipeline.",
+        description="Text-vs-timing engagement classification pipeline.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -311,11 +311,11 @@ def main(argv=None):
     dataset_path = args.dataset
     if args.synthetic or dataset_path is None:
         from training.config import DATASET_DIR
-        sample_path = DATASET_DIR / "ADHD_sample.csv"
+        sample_path = DATASET_DIR / "sample_posts.csv"
         if dataset_path is None and not args.synthetic and not sample_path.exists():
             print(
                 "No --dataset given. Falling back to synthetic sample data.\n"
-                "Pass --dataset path/to/ADHD.csv for results that mean something.\n"
+                "Pass --dataset path/to/posts.csv for results that mean something.\n"
             )
         if not sample_path.exists():
             from data.make_sample_data import write_dataset
@@ -370,7 +370,7 @@ def main(argv=None):
     device = resolve_device(config.device)
     optimizer = build_optimizer(model, config.learning_rate, config.weight_decay)
 
-    checkpoint_path = config.checkpoint_dir / "bert_adhd_model.pth"
+    checkpoint_path = config.checkpoint_dir / "bert_temporal_model.pth"
     history = train_model(
         train_loader,
         model,
