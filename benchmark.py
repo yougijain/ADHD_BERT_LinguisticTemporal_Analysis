@@ -21,6 +21,7 @@ import sys
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 import main as pipeline  # noqa: E402
+from models.embedding_baseline import DEFAULT_ENCODER  # noqa: E402
 from models.model_utils import save_metrics, set_seed  # noqa: E402
 from training.config import Config  # noqa: E402
 
@@ -33,6 +34,7 @@ def _build_config(args, use_temporal):
         max_rows=args.max_rows,
         column_map=args.column_map,
         model_name=args.model_name,
+        encoder_name=args.encoder_name,
         max_length=args.max_length,
         use_temporal_features=use_temporal,
         epochs=args.epochs,
@@ -59,6 +61,22 @@ def run_grid(args):
         )
         rows.append({"model": "TF-IDF", "features": feature_set,
                      "metrics": results["final_metrics"]})
+
+    # Frozen embeddings sit between the two: pretrained semantics, no
+    # task-specific training. Opt-in, because unlike the TF-IDF half it needs a
+    # model download and so cannot run on the offline path.
+    if args.embeddings:
+        for use_temporal in (False, True):
+            config = _build_config(args, use_temporal)
+            config.ensure_dirs()
+            set_seed(config.seed)
+
+            feature_set = "text + temporal" if use_temporal else "text only"
+            label = f"Frozen {args.encoder_name.split('/')[-1]}"
+            print(f"\n{'=' * 70}\n{label} | {feature_set}\n{'=' * 70}")
+            results, _ = pipeline.run_embedding_baseline(config, run_analysis=False)
+            rows.append({"model": label, "features": feature_set,
+                         "metrics": results["final_metrics"]})
 
     if args.skip_bert:
         return rows
@@ -166,6 +184,11 @@ def parse_args(argv=None):
     parser.add_argument("--offline-tokenizer", action="store_true")
     parser.add_argument("--skip-bert", action="store_true",
                         help="Only run the TF-IDF half. Fast, and needs no network.")
+    parser.add_argument("--embeddings", action="store_true",
+                        help="Add a frozen sentence-embedding row between TF-IDF "
+                             "and BERT. Needs a model download.")
+    parser.add_argument("--encoder-name", default=DEFAULT_ENCODER,
+                        help="Encoder for the --embeddings row.")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=2e-5)

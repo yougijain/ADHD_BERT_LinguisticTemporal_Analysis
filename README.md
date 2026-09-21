@@ -11,14 +11,20 @@ saying how much the clock was worth.
 The target is binary: did a post land above typical engagement for its venue.
 The comparison is a 2x2 grid.
 
-|                  | text only | text + temporal |
-|------------------|-----------|-----------------|
-| **TF-IDF + LR**  | ablation  | full            |
-| **BERT**         | ablation  | full            |
+|                       | text only | text + temporal |
+|-----------------------|-----------|-----------------|
+| **TF-IDF + LR**       | ablation  | full            |
+| **Frozen MiniLM + LR**| ablation  | full            |
+| **BERT (fine-tuned)** | ablation  | full            |
 
 - **TF-IDF + logistic regression** — word and character n-grams, optionally
   stacked with the temporal features. Fast, interpretable, and a genuinely
   strong competitor on short text. It is the control, not a straw man.
+- **Frozen MiniLM + logistic regression** — mean-pooled sentence embeddings,
+  no fine-tuning, the same linear head. This row exists because TF-IDF against
+  fine-tuned BERT varies two things at once — pretrained semantics *and*
+  task-specific training — so a BERT win tells you nothing about which one paid.
+  Holding training fixed splits that apart.
 - **BERT + temporal fusion** — a BERT encoder for the text; cyclical
   hour-of-day, day-of-week, month, weekend and late-night features (all
   **UTC**, see [Timezones](#timezones)) through a small MLP; the two
@@ -43,10 +49,11 @@ majority-class baseline. The test suite runs in a few seconds with no network.
 | Evaluation with baseline comparison | Done |
 | TF-IDF + logistic regression baseline | Done |
 | Benchmark grid (model x feature set) | Done |
+| Frozen-embedding baseline (MiniLM + LR) | Done |
 | Descriptive analysis + figures | Done |
 | Error analysis (slices, calibration, model comparison) | Done |
 | Corpus fetcher + schema adapter (Stack Exchange, CC BY-SA 4.0) | Done |
-| Test suite (254 tests, offline) | Done |
+| Test suite (274 tests, offline) | Done |
 | Results on a real corpus | **Not run — see [Dataset](#dataset)** |
 
 That last row is the honest one. Everything below the line marked *sample data*
@@ -94,6 +101,13 @@ python benchmark.py --synthetic --tiny-model --epochs 6 --learning-rate 1e-3 \
 python benchmark.py --synthetic --skip-bert     # linear half only, seconds
 ```
 
+With the frozen-embedding row (needs a model download, so it is opt-in):
+
+```bash
+python benchmark.py --dataset datasets/posts.csv --embeddings --epochs 3
+python main.py --dataset datasets/posts.csv --model embeddings   # that row alone
+```
+
 The real thing — fetch a corpus, then train on it (downloads
 `bert-base-uncased`):
 
@@ -130,7 +144,8 @@ outputs/
 ├── figures/error_rate_by_hour.png          # where the model fails
 ├── figures/calibration.png                 # confidence vs observed accuracy
 ├── results.json                            # config, metrics, history, correlations
-└── results_tfidf.json                      # baseline metrics and top features
+├── results_tfidf.json                      # baseline metrics and top features
+└── results_embeddings.json                 # frozen-embedding row, when run
 ```
 
 ## Dataset
@@ -369,7 +384,8 @@ no pretrained knowledge, so its accuracy is not a result.
 
 | Flag | Effect |
 |---|---|
-| `--model` | `bert` (default) or `tfidf` |
+| `--model` | `bert` (default), `tfidf`, or `embeddings` |
+| `--encoder-name` | Encoder for `--model embeddings` (frozen, never fine-tuned) |
 | `--synthetic` | Generate and use sample data |
 | `--tiny-model` | Random miniature BERT, no download |
 | `--offline-tokenizer` | Corpus-trained tokenizer instead of downloading one |
@@ -405,6 +421,7 @@ no pretrained knowledge, so its accuracy is not a result.
 ├── models/
 │   ├── attention_layer.py         # attention pooling over token states
 │   ├── bert_temporal_model.py     # BERT + temporal fusion classifier
+│   ├── embedding_baseline.py      # frozen sentence embeddings + logistic regression
 │   ├── model_utils.py             # seeding, devices, checkpoints
 │   └── tfidf_baseline.py          # TF-IDF + logistic regression baseline
 ├── training/
@@ -433,6 +450,18 @@ wordpieces. If the top features look like artefacts, the label is leaking.
 Run the baseline first. It takes seconds, it needs no GPU and no downloads, and
 if it already gets most of the available accuracy then the transformer is
 carrying very little and the honest write-up says so.
+
+Then the frozen-embedding row, which is the cheapest way to find out *why* any
+gap exists. Three readings, each pointing somewhere different:
+
+| Pattern | What it means |
+|---|---|
+| Embeddings > TF-IDF, BERT > embeddings | Both axes pay; the fine-tuning budget is justified |
+| Embeddings > TF-IDF, BERT ≈ embeddings | Pretrained semantics are the whole story — ship the embedding model: one forward pass, no training, no GPU at inference |
+| Embeddings ≈ TF-IDF | The signal is lexical. A transformer is not reading anything a bag of words cannot |
+
+The middle row is the common outcome on short text, and it is the one worth
+knowing before anyone commits to a fine-tuning pipeline.
 
 Then run the error analysis. Accuracy is one number; where a model fails is the
 part that decides whether it is usable, and it is usually the more interesting

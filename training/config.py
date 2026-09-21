@@ -56,6 +56,10 @@ class Config:
 
     # Tokenization
     model_name: str = "bert-base-uncased"
+    # Encoder for the frozen-embedding baseline. Never fine-tuned, so it is a
+    # separate knob from model_name -- the point of that row is to hold
+    # task-specific training fixed while varying the representation.
+    encoder_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     max_length: int = 256
     tokenize_batch_size: int = 512
 
