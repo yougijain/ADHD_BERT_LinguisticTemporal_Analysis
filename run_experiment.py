@@ -162,6 +162,7 @@ def main(argv=None):
         split_strategy=args.split_strategy, seed=args.seed,
         output_dir=output_dir / "figures", max_rows=args.max_rows,
         json_out=output_dir / "error_analysis.json",
+        column_map=args.column_map,
     )
 
     _banner(3, total_steps, "Error analysis: does the timestamp fix or shuffle?")
@@ -170,6 +171,7 @@ def main(argv=None):
         split_strategy=args.split_strategy, seed=args.seed,
         max_rows=args.max_rows,
         json_out=output_dir / "feature_set_comparison.json",
+        column_map=args.column_map,
     )
 
     # --- 4. the document -------------------------------------------------

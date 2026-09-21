@@ -19,6 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from data.preprocess import build_labels, clean_dataset  # noqa: E402
+from data.schema import read_dataset  # noqa: E402
 from training.config import FIGURE_DIR, TIMESTAMP_COLUMN  # noqa: E402
 from utils.time_utils import (  # noqa: E402
     LATE_NIGHT_END,
@@ -168,10 +169,11 @@ def plot_loss_curve(batch_losses, output_dir=FIGURE_DIR, window=None):
     return path
 
 
-def run(dataset_path, output_dir=FIGURE_DIR, label_strategy="median"):
+def run(dataset_path, output_dir=FIGURE_DIR, label_strategy="median",
+        column_map=None):
     """Load a dataset, print the temporal summary, and write the figures."""
     print(f"Loading {dataset_path}...")
-    data = pd.read_csv(dataset_path)
+    data = read_dataset(dataset_path, column_map)
     data = clean_dataset(data)
     data = add_temporal_features(data, TIMESTAMP_COLUMN)
     labels, label_summary = build_labels(data, strategy=label_strategy)
@@ -206,8 +208,11 @@ def main():
     parser.add_argument("--output-dir", default=str(FIGURE_DIR), help="Figure output dir.")
     parser.add_argument("--label-strategy", default="median",
                         choices=["median", "positive", "threshold"])
+    parser.add_argument("--column-map", default="",
+                        help="canonical=source pairs, e.g. 'selftext=body'.")
     args = parser.parse_args()
-    run(args.dataset, args.output_dir, args.label_strategy)
+    run(args.dataset, args.output_dir, args.label_strategy,
+        column_map=args.column_map)
 
 
 if __name__ == "__main__":
