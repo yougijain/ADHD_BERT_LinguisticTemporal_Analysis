@@ -1,11 +1,11 @@
-"""PyTorch Dataset and split helpers for ADHD post data."""
+"""PyTorch Dataset and split helpers for timestamped post data."""
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
 
-class ADHDTextDataset(Dataset):
+class PostDataset(Dataset):
     """Tokenized post bodies, their labels, and the matching temporal features.
 
     Attributes:
@@ -143,7 +143,7 @@ def build_dataloaders(encodings, labels, temporal_features=None, batch_size=16,
         sub_labels = np.asarray(labels)[idx] if labels is not None else None
         sub_temporal = (np.asarray(temporal_features)[idx]
                         if temporal_features is not None else None)
-        return ADHDTextDataset(sub_encodings, sub_labels, sub_temporal)
+        return PostDataset(sub_encodings, sub_labels, sub_temporal)
 
     train_dataset = subset(train_idx)
     val_dataset = subset(val_idx)

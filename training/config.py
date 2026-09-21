@@ -1,4 +1,4 @@
-"""Central configuration for the ADHD linguistic-temporal pipeline.
+"""Central configuration for the text-vs-timing pipeline.
 
 Every tunable lives here so that `main.py`, the training loop, and the analysis
 scripts all agree on paths, hyperparameters, and feature definitions.
@@ -35,9 +35,9 @@ TEMPORAL_FEATURES: List[str] = [
     "is_late_night",
 ]
 
-# Reddit uses these placeholders for posts whose body was taken down. They are
-# not text, and training on them teaches the model nothing.
-REDDIT_PLACEHOLDERS = ("[removed]", "[deleted]", "[removed by reddit]", "")
+# Forum dumps use these placeholders for posts whose body was taken down. They
+# are not text, and training on them teaches the model nothing.
+PLACEHOLDER_BODIES = ("[removed]", "[deleted]", "[removed by reddit]", "")
 
 
 @dataclass
@@ -45,7 +45,7 @@ class Config:
     """Runtime configuration for a single train/evaluate run."""
 
     # Data
-    dataset_path: Path = DATASET_DIR / "ADHD.csv"
+    dataset_path: Path = DATASET_DIR / "posts.csv"
     label_strategy: str = "median"  # median | positive | threshold
     label_threshold: int = 1  # only used when label_strategy == "threshold"
     min_tokens: int = 5  # drop posts with fewer whitespace tokens than this

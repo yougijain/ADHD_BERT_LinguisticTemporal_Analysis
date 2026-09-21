@@ -10,7 +10,7 @@ Every cell trains on the same rows, the same labels, and the same split, and is
 scored by the same compute_metrics, so the numbers are directly comparable.
 
     python benchmark.py --synthetic --tiny-model --epochs 6 --learning-rate 1e-3
-    python benchmark.py --dataset datasets/ADHD.csv --epochs 3
+    python benchmark.py --dataset datasets/posts.csv --epochs 3
 """
 
 import argparse
@@ -177,7 +177,7 @@ def main(argv=None):
 
     if args.synthetic or args.dataset is None:
         from training.config import DATASET_DIR
-        sample = DATASET_DIR / "ADHD_sample.csv"
+        sample = DATASET_DIR / "sample_posts.csv"
         if not sample.exists():
             from data.make_sample_data import write_dataset
             print("Generating synthetic sample dataset...")

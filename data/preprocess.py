@@ -7,7 +7,7 @@ import pandas as pd
 from transformers import AutoTokenizer
 
 from training.config import (
-    REDDIT_PLACEHOLDERS,
+    PLACEHOLDER_BODIES,
     SCORE_COLUMN,
     TEXT_COLUMN,
     TIMESTAMP_COLUMN,
@@ -97,7 +97,7 @@ def clean_text(text):
     """
     if text is None or not isinstance(text, str):
         return ""
-    if text.strip().lower() in REDDIT_PLACEHOLDERS:
+    if text.strip().lower() in PLACEHOLDER_BODIES:
         return ""
 
     text = _URL_RE.sub(" ", text)
@@ -114,7 +114,7 @@ def is_placeholder(text):
         return True
     if not isinstance(text, str):
         return True
-    return text.strip().lower() in REDDIT_PLACEHOLDERS
+    return text.strip().lower() in PLACEHOLDER_BODIES
 
 
 def clean_dataset(data, min_tokens=5, combine_title=True):
