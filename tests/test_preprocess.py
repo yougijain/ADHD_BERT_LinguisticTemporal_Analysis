@@ -148,3 +148,26 @@ class TestBatchTokenize:
         enc = batch_tokenize(["word " * 500], tokenizer=local_tokenizer,
                              max_length=24, verbose=False)
         assert enc["input_ids"].shape == (1, 24)
+
+
+class TestHtmlStripping:
+    """Real corpora arrive as HTML; tag names must not become tokens."""
+
+    def test_tags_are_removed(self):
+        assert clean_text("<p>Hello <b>there</b></p>") == "Hello there"
+
+    def test_tag_names_do_not_survive_as_words(self):
+        cleaned = clean_text("<div><code>x</code></div>")
+        assert "div" not in cleaned.split()
+        assert "code" not in cleaned.split()
+
+    def test_escaped_angle_brackets_are_kept_as_text(self):
+        # &lt;p&gt; is something the author typed, not markup.
+        assert "p" in clean_text("use &lt;p&gt; for paragraphs")
+
+    def test_arithmetic_comparisons_survive(self):
+        # A tag name has to follow the "<" immediately, so this is not markup.
+        assert clean_text("a < b and c > d") == "a b and c d"
+
+    def test_unclosed_bracket_does_not_eat_the_post(self):
+        assert "rest of the post" in clean_text("2 < 3 rest of the post")

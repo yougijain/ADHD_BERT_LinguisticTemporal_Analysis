@@ -49,6 +49,9 @@ class Config:
     label_strategy: str = "median"  # median | positive | threshold
     label_threshold: int = 1  # only used when label_strategy == "threshold"
     min_tokens: int = 5  # drop posts with fewer whitespace tokens than this
+    # "selftext=body,created_utc=creation_date" for a CSV that does not already
+    # use the canonical names. Empty means infer only; see data/schema.py.
+    column_map: str = ""
     max_rows: int = 0  # 0 means "use everything"; >0 subsamples for quick runs
 
     # Tokenization

@@ -45,7 +45,8 @@ majority-class baseline. The test suite runs in a few seconds with no network.
 | Benchmark grid (model x feature set) | Done |
 | Descriptive analysis + figures | Done |
 | Error analysis (slices, calibration, model comparison) | Done |
-| Test suite (193 tests, offline) | Done |
+| Corpus fetcher + schema adapter (Stack Exchange, CC BY-SA 4.0) | Done |
+| Test suite (254 tests, offline) | Done |
 | Results on a real corpus | **Not run — see [Dataset](#dataset)** |
 
 That last row is the honest one. Everything below the line marked *sample data*
@@ -93,9 +94,11 @@ python benchmark.py --synthetic --tiny-model --epochs 6 --learning-rate 1e-3 \
 python benchmark.py --synthetic --skip-bert     # linear half only, seconds
 ```
 
-The real thing, once you have a corpus (downloads `bert-base-uncased`):
+The real thing — fetch a corpus, then train on it (downloads
+`bert-base-uncased`):
 
 ```bash
+python -m data.fetch_dataset --site stackoverflow --rows 20000 --out datasets/posts.csv
 python main.py --dataset datasets/posts.csv --epochs 3
 ```
 
@@ -132,12 +135,82 @@ outputs/
 
 ## Dataset
 
-The pipeline expects a CSV with at least `selftext`, `score`, and `created_utc`
-(Unix epoch seconds; millisecond timestamps are detected and handled). `title`
-is used when present.
+The pipeline works in one schema — `selftext`, `score`, `created_utc`, with
+`title` used when present. You do not have to rename anything: columns are
+mapped on load (see [Column mapping](#column-mapping)).
 
-**No real corpus ships with this repo**, and no results have been produced on
-one yet. Until then, the sample generator stands in:
+### Getting a corpus
+
+```bash
+python -m data.fetch_dataset --site stackoverflow --rows 20000 \
+    --from 2023-01-01 --to 2024-01-01 --out datasets/posts.csv
+```
+
+**Why Stack Exchange.** The question needs prose, an engagement signal, and a
+real posting timestamp — and a licence you can defend out loud. "I found it on
+Kaggle" is not a provenance story: a large share of the Reddit dumps there were
+scraped against the platform's terms and redistributed with no licence at all.
+Stack Exchange gives all three cleanly:
+
+| | |
+|---|---|
+| **Text** | `body`, real prose, HTML stripped on fetch |
+| **Engagement** | `score`, net votes — genuinely two-sided, unlike platforms where posts start at 1 and floor at 0 |
+| **Timestamp** | `creation_date`, Unix epoch, UTC |
+| **Licence** | CC BY-SA 4.0 — redistribution explicitly permitted with attribution |
+| **Access** | Public API, no key needed; 300 requests/day anonymous = 30,000 posts |
+
+That two-sided score matters more than it sounds. On a platform where every
+post starts at 1, `score` is almost a count of views and the median label cut is
+close to arbitrary. Stack Exchange scores go negative, so "above typical
+engagement" is a real distinction.
+
+`--site` takes any Stack Exchange site key. `stackoverflow` is the default;
+the smaller sites (`cooking`, `scifi`, `worldbuilding`) have more discursive
+prose and a different audience clock, which makes a second run on one of them a
+genuine replication rather than a re-roll.
+
+Code blocks are stripped from bodies by default. On a programming site they are
+most of the character mass, and a character n-gram model handed a stack trace
+will learn to predict engagement from variable names — a leak dressed up as a
+feature. `--keep-code` turns that off.
+
+### Provenance
+
+Every fetch writes a sidecar next to the CSV:
+
+```
+datasets/posts.csv
+datasets/posts.provenance.json    # source, licence, attribution, query, span, row count
+```
+
+A CSV with no provenance is a liability — six months later nobody can say what
+it is, whether it may be redistributed, or how to reproduce it. The sidecar
+answers all three, and it is what you quote when someone asks where the data
+came from.
+
+### Column mapping
+
+Any CSV with text, a score, and a timestamp works. Known column names are
+mapped automatically:
+
+```
+$ python main.py --dataset datasets/posts.csv --model tfidf
+  1500 raw rows, columns: ['question_id', 'title', 'body', 'score', 'creation_date']
+  column map: 'creation_date' -> 'created_utc' (inferred)
+  column map: 'body' -> 'selftext' (inferred)
+```
+
+Inference only fills a canonical column that is genuinely **absent**. A frame
+that already has `score` keeps it even if it also has `points` — silently
+relabelling the target is how you train on the wrong thing and never find out.
+When the guess is wrong or missing, say so explicitly:
+
+```bash
+python main.py --dataset mine.csv --column-map 'selftext=body_text,score=upvotes'
+```
+
+### The synthetic fallback
 
 ```bash
 python -m data.make_sample_data --rows 2000 --out datasets/sample_posts.csv
@@ -304,6 +377,7 @@ no pretrained knowledge, so its accuracy is not a result.
 | `--no-attention-pooling` | Mean pooling instead of learned attention |
 | `--freeze-bert` | Train only the head; much faster on CPU |
 | `--max-rows N` | Cap rows for a quick run |
+| `--column-map` | `canonical=source` pairs, e.g. `'selftext=body'` |
 | `--label-strategy` | `median` (default), `threshold`, `positive` |
 | `--split-strategy` | `temporal` (default) or `random` |
 | `--device` | `auto`, `cpu`, `cuda` |
@@ -323,9 +397,11 @@ no pretrained knowledge, so its accuracy is not a result.
 │   └── token_stats.py             # token-length distribution, truncation rates
 ├── data/
 │   ├── data_loader.py             # Dataset and train/val splitting
+│   ├── fetch_dataset.py           # Stack Exchange corpus fetcher + provenance
 │   ├── inspect_dataset.py         # quick look at a raw CSV
 │   ├── make_sample_data.py        # synthetic generator (testing utility)
-│   └── preprocess.py              # cleaning, labelling, tokenization
+│   ├── preprocess.py              # cleaning, labelling, tokenization
+│   └── schema.py                  # map any CSV onto the canonical columns
 ├── models/
 │   ├── attention_layer.py         # attention pooling over token states
 │   ├── bert_temporal_model.py     # BERT + temporal fusion classifier
