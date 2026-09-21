@@ -259,15 +259,53 @@ It runs four steps and writes `RESULTS.md`:
 3. `--compare-feature-sets` — fixed vs broken → `outputs/feature_set_comparison.json`
 4. `analysis.report` — the document
 
-The offline smoke version, about a minute on CPU:
+`bert-base-uncased`, `--split-strategy temporal`, `--label-strategy median`,
+3 epochs, `--max-length 256`, `--batch-size 16`, AMP on by default — a Colab T4
+is enough.
+
+### Two smoke runs before the real one
+
+**Offline, no data, about a minute on CPU** — checks the plumbing:
 
 ```bash
 python run_experiment.py --synthetic --skip-bert
 ```
 
-`bert-base-uncased`, `--split-strategy temporal`, `--label-strategy median`,
-3 epochs, `--max-length 256`, `--batch-size 16`, AMP on by default — a Colab T4
-is enough.
+**On real data, capped, a couple of minutes** — do this one before committing to
+the full corpus:
+
+```bash
+python run_experiment.py --dataset datasets/posts.csv --max-rows 2000 --skip-bert --embeddings
+```
+
+Passing the synthetic smoke run proves very little about a real corpus. The
+generator writes clean, uniform, template text; a real dump does not. Real
+bodies carry markup the cleaner has to strip, encodings it has to survive, rows
+where the body is empty and only the title has content, and a score
+distribution that decides whether `--label-strategy median` finds a balanced cut
+at all. Any of that can fail, and the cheapest place to find out is a two-minute
+run rather than a forty-minute one.
+
+Read three things off it before scaling up:
+
+| Check | Where | What is wrong if it looks off |
+|---|---|---|
+| Rows surviving cleaning | `Cleaned dataset: N in, M out` | A large drop means the body column is mostly markup, placeholders, or under `min_tokens` |
+| Class balance | `Labels: {...}` | A lopsided `positive_rate` means the median cut did not land — the score distribution is too concentrated |
+| Lift over baseline | end of each grid cell | At or below zero on 2000 rows is usually the label, not the model |
+
+### No GPU?
+
+The BERT rows are the only part that wants one. Everything else runs on a
+laptop, and `--skip-bert` still gives you a full four-cell grid — TF-IDF and
+frozen MiniLM, each with and without the timestamp:
+
+```bash
+python run_experiment.py --dataset datasets/posts.csv --skip-bert --embeddings
+```
+
+That is a real result on real data, and it answers the project's question. The
+fine-tuned rows sharpen it; they are not what makes it valid.
 
 ### Nothing in the report is hand-typed
 
