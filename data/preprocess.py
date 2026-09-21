@@ -15,6 +15,15 @@ from training.config import (
 )
 
 _URL_RE = re.compile(r"https?://\S+|www\.\S+")
+# Real corpora arrive as HTML as often as markdown (Stack Exchange bodies are
+# HTML; so is most of what a scraper produces). Without this the tag names
+# survive `_KEEP_RE` as bare words and every document gains a "p", a "div" and
+# a "code" -- terms that appear everywhere and mean nothing, which is exactly
+# the kind of junk feature a TF-IDF model will happily fit.
+# A tag name must follow the "<" immediately, so arithmetic like "2 < 3 and
+# 4 > 1" survives intact -- a bare "<[^>]+>" would swallow the span between
+# them and take the author's words with it.
+_HTML_TAG_RE = re.compile(r"</?[a-zA-Z][a-zA-Z0-9]*(?:\s[^<>]{0,200})?/?>")
 _MARKDOWN_RE = re.compile(r"[*_~`>#\[\]()]")
 _WHITESPACE_RE = re.compile(r"\s+")
 # Keep letters, digits, and the punctuation that carries tone. The old version
@@ -101,6 +110,9 @@ def clean_text(text):
         return ""
 
     text = _URL_RE.sub(" ", text)
+    # Tags first, then entities: unescaping first would turn a literal "&lt;p&gt;"
+    # into a tag and delete the text the author actually wrote.
+    text = _HTML_TAG_RE.sub(" ", text)
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     text = _MARKDOWN_RE.sub(" ", text)
     text = _KEEP_RE.sub(" ", text)
