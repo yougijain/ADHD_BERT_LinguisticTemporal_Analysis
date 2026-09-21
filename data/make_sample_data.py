@@ -1,22 +1,22 @@
-"""Generate a synthetic, Reddit-shaped dataset so the pipeline runs out of the box.
+"""Generate a synthetic, forum-shaped corpus for tests and smoke runs.
 
-The real dataset this project was built around is a Kaggle dump that has to be
-downloaded by hand, which means a fresh clone cannot run anything. This module
-fabricates a CSV with the same columns and a *known, planted* signal, so you can
-exercise the full pipeline, verify the plumbing, and sanity-check that the
-temporal branch is wired up.
+This is a **testing utility**, not a data source. It fabricates a CSV with the
+columns the pipeline expects and a *known, planted* signal, so the test suite
+and a fresh clone can exercise every code path without a download. For results
+that mean anything, fetch a real corpus -- see `data/fetch_dataset.py` and the
+Dataset section of the README.
 
-THIS IS NOT REAL DATA. It is generated from templates. Nothing learned from it
-says anything about ADHD, about Reddit, or about anyone. Use it to test the
-code, then point --dataset at the real CSV for results that mean something.
+THIS IS NOT REAL DATA. It is assembled from templates. Nothing measured on it
+says anything about any forum, any topic, or anyone.
 
 The planted structure, so you know what a correct run should recover:
   * Engagement (score) rises with posting hour-of-day, peaking in the evening
     when more people are online, and drops in the small hours.
   * Engagement also rises when a post asks a direct question.
-  * Late-night posts draw on a different phrase pool than daytime posts.
+  * Off-hours posts draw on a different phrase pool than daytime posts.
 Text alone therefore gets you part of the way; adding the timestamp should get
-you further. That gap is the point of the temporal ablation.
+you further. That gap is exactly what the temporal ablation measures, which is
+why the generator plants a signal in both channels rather than one.
 """
 
 import argparse
@@ -27,49 +27,51 @@ import pandas as pd
 
 from training.config import DATASET_DIR
 
-# Template fragments. Deliberately mundane -- these exist to give the tokenizer
-# something with realistic structure, not to characterise anyone.
+# Template fragments: mundane, topic-neutral help-forum phrasing. They exist to
+# give the tokenizer realistic structure, nothing more.
 OPENERS_DAY = [
-    "Started the morning with a long list",
-    "Trying a new routine this week",
-    "Had my checkup yesterday",
-    "Finally cleared my inbox",
-    "Back at work after a break",
-    "Been using a timer for focus blocks",
+    "Ran into this while setting up a new project today",
+    "Following the documented steps and got a different result",
+    "Picked this up from a colleague and it works but I do not know why",
+    "Spent the afternoon narrowing this down to one function",
+    "Back on this after shipping the last change",
+    "Reduced it to a minimal example before posting",
 ]
 OPENERS_NIGHT = [
-    "Cant sleep again so here I am",
-    "Its almost 3am and my brain will not stop",
-    "Lying awake thinking about tomorrow",
-    "Everyone is asleep and I am still going",
-    "Another night of scrolling instead of sleeping",
-    "Wide awake and hyperfocused on something pointless",
+    "Still at this well past midnight and out of ideas",
+    "Third attempt tonight and the build keeps failing",
+    "Everyone else has logged off so posting here instead",
+    "Been staring at the same stack trace for hours",
+    "Deploying late and hit something I have never seen",
+    "Cannot leave this alone until it makes sense",
 ]
 MIDDLES = [
-    "and I keep losing track of what I was doing",
-    "but the task switching is what gets me",
-    "and the paperwork has been sitting there for weeks",
-    "though the structure helps more than I expected",
-    "and I forgot two appointments this month",
-    "but writing things down has been working",
-    "and I start five things before finishing one",
-    "so I am trying to break it into smaller steps",
+    "and the error only shows up on the second run",
+    "but the logs stop right before the interesting part",
+    "and rolling back the last change did not help",
+    "though it works fine on a clean checkout",
+    "and the same input gives two different outputs",
+    "but pinning the version made it go away",
+    "and I cannot reproduce it outside the test suite",
+    "so I am trying to isolate which step actually fails",
 ]
 CLOSERS_STATEMENT = [
-    "Just wanted to write it down somewhere.",
-    "Posting mostly to get it out of my head.",
-    "Anyway, that is where things are.",
-    "Figured someone else might relate.",
+    "Leaving this here in case it helps someone later.",
+    "Writing it up mostly to get the details straight.",
+    "Anyway, that is where I have got to so far.",
+    "Posting the workaround I settled on.",
 ]
 CLOSERS_QUESTION = [
-    "Has anyone found something that actually works?",
-    "What do you all do about this?",
-    "Is this something you deal with too?",
-    "Any advice on where to start?",
+    "Has anyone hit this and found a real fix?",
+    "What would you check next?",
+    "Is this expected behaviour or a bug?",
+    "Any pointers on where to start looking?",
 ]
 TITLES = [
-    "Routine question", "Focus struggles", "Small win today", "Need some advice",
-    "Late night thoughts", "Trying something new", "Checking in", "Does this sound familiar",
+    "Unexpected result from a documented call", "Build fails only on CI",
+    "Small fix that took all day", "Need a second opinion on this trace",
+    "Late night debugging notes", "Trying a different approach",
+    "Following up on an earlier thread", "Is this the intended behaviour",
 ]
 
 
@@ -161,7 +163,7 @@ def generate_dataset(n_rows=1200, seed=42, start="2023-01-01", days=365,
 
 def write_dataset(path=None, **kwargs):
     """Generate and write the CSV, creating the directory if needed."""
-    path = Path(path) if path else DATASET_DIR / "ADHD_sample.csv"
+    path = Path(path) if path else DATASET_DIR / "sample_posts.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     frame = generate_dataset(**kwargs)
     frame.to_csv(path, index=False)
