@@ -15,6 +15,7 @@ The comparison is a 2x2 grid.
 |-----------------------|-----------|-----------------|
 | **TF-IDF + LR**       | ablation  | full            |
 | **Frozen MiniLM + LR**| ablation  | full            |
+| **Zero-shot LLM** *(scaffolded)* | ablation | full |
 | **BERT (fine-tuned)** | ablation  | full            |
 
 - **TF-IDF + logistic regression** — word and character n-grams, optionally
@@ -50,11 +51,12 @@ majority-class baseline. The test suite runs in a few seconds with no network.
 | TF-IDF + logistic regression baseline | Done |
 | Benchmark grid (model x feature set) | Done |
 | Frozen-embedding baseline (MiniLM + LR) | Done |
+| Zero-shot LLM row | **Scaffolded, never run** |
 | Descriptive analysis + figures | Done |
 | Error analysis (slices, calibration, model comparison) | Done |
 | Corpus fetcher + schema adapter (Stack Exchange, CC BY-SA 4.0) | Done |
 | One-command experiment runner + generated `RESULTS.md` | Done |
-| Test suite (322 tests, offline) | Done |
+| Test suite (366 tests, offline) | Done |
 | Results on a real corpus | **Not run — see [Dataset](#dataset)** |
 
 That last row is the honest one. Everything below the line marked *sample data*
@@ -242,6 +244,73 @@ off-hours penalty, bonus for asking a question) plus the `[removed]`/`[deleted]`
 rows a real dump is full of, so the cleaning step has something to remove. It is
 fabricated text. It is not data about anyone, and nothing measured on it is a
 result.
+
+## The zero-shot LLM row
+
+**Scaffolded, not run.** Every piece is implemented and tested; no API call has
+ever been made from this repo and no LLM row appears in any grid. It is a wired
+socket, not a result, and this section says so rather than letting a reader
+assume otherwise.
+
+It earns a place because it splits an axis the other three rows cannot:
+
+| Row | Representation | Task training |
+|---|---|---|
+| TF-IDF | lexical | yes |
+| Frozen MiniLM | pretrained semantics | yes |
+| Fine-tuned BERT | pretrained semantics | yes, end to end |
+| **Zero-shot LLM** | pretrained semantics | **none** |
+
+Every other row learns this task from this corpus. The LLM has never seen a
+label. If it matches models trained on thousands of them, the labels carry less
+information than the corpus size suggests — worth knowing before anyone builds
+a labelling pipeline.
+
+### The ablation becomes a prompt
+
+This is the part worth reading. "Text only" and "text + temporal" are not
+feature matrices for an LLM — they are two prompts, and the timestamp has to be
+rendered into English or the model cannot use it at all:
+
+```
+Posted at 17:00 UTC on a Thursday.
+
+Post:
+Need a second opinion on this trace...
+```
+
+`UTC` is stated explicitly. Without it the model reasonably assumes local time
+and reasons about the poster's body clock — exactly the inference
+[Timezones](#timezones) says this data cannot support. The prompt has to be as
+honest about what it knows as the rest of the pipeline is.
+
+### Guards, because this row bills per post
+
+```bash
+python main.py --dataset datasets/posts.csv --model llm     # opt-in, real calls
+python benchmark.py --dataset datasets/posts.csv --llm      # adds both arms
+```
+
+- **Dry-run by default.** Constructed programmatically without a classifier, it
+  refuses to call anything and quotes the price instead:
+  `A real pass over 226 prompts would cost roughly $0.12 on claude-opus-5.`
+- **Disk-cached** by (model, prompt), so re-running the grid after a bug fix is
+  free rather than a second bill.
+- **`anthropic` is not in `requirements.txt`** — installing it is part of opting in.
+- **Never a default.** No flag path reaches this row without `--llm` or
+  `--model llm`.
+
+### Deliberately left for the next iteration
+
+Few-shot examples drawn from the training split (this is zero-shot), the
+Batches API (halves the cost), and concurrency — the loop is serial on purpose,
+since a fast loop that silently spends money is the wrong default for
+scaffolding.
+
+There is also no `predict_proba`: a schema-constrained label carries no
+calibrated confidence, so this row reports `loss` as 0.0 and the calibration
+section does not apply to it. Inventing a probability would put a meaningless
+number in the report.
 
 ## Running the experiment
 
@@ -455,6 +524,7 @@ no pretrained knowledge, so its accuracy is not a result.
 |---|---|
 | `--model` | `bert` (default), `tfidf`, or `embeddings` |
 | `--encoder-name` | Encoder for `--model embeddings` (frozen, never fine-tuned) |
+| `--llm-model` | Model for `--model llm`. Bills per validation row |
 | `--synthetic` | Generate and use sample data |
 | `--tiny-model` | Random miniature BERT, no download |
 | `--offline-tokenizer` | Corpus-trained tokenizer instead of downloading one |
@@ -493,6 +563,7 @@ no pretrained knowledge, so its accuracy is not a result.
 │   ├── attention_layer.py         # attention pooling over token states
 │   ├── bert_temporal_model.py     # BERT + temporal fusion classifier
 │   ├── embedding_baseline.py      # frozen sentence embeddings + logistic regression
+│   ├── llm_baseline.py            # zero-shot LLM row (scaffolded, opt-in)
 │   ├── model_utils.py             # seeding, devices, checkpoints
 │   └── tfidf_baseline.py          # TF-IDF + logistic regression baseline
 ├── training/

@@ -14,3 +14,8 @@ matplotlib>=3.7
 
 # Testing
 pytest>=7.4
+
+# Optional: the zero-shot LLM row only.
+# Deliberately not installed by default -- that row is opt-in and bills per
+# validation row. Install it when you actually intend to run one:
+#   pip install anthropic

@@ -47,6 +47,11 @@ from models.embedding_baseline import (  # noqa: E402
     DEFAULT_ENCODER,
     EmbeddingBaseline,
 )
+from models.llm_baseline import (  # noqa: E402
+    DEFAULT_MODEL as DEFAULT_LLM_MODEL,
+    LlmBaseline,
+    estimate_cost,
+)
 from models.tfidf_baseline import TfidfBaseline, print_top_features  # noqa: E402
 from models.model_utils import (  # noqa: E402
     describe_model,
@@ -282,6 +287,33 @@ def run_embedding_baseline(config, run_analysis=True, embed_fn=None):
     return results, model
 
 
+def run_llm_baseline(config, run_analysis=True, classify_fn=None,
+                     dry_run=True, cache_path=None):
+    """Train-free LLM row. Costs money, so it is opt-in at every layer.
+
+    The zero-shot row splits an axis the other three cannot: every other model
+    learns this task from this corpus, and this one has never seen a label.
+
+    Args:
+        classify_fn (callable | None): `prompt -> 0|1`, bypassing the API.
+        dry_run (bool): When true and no classify_fn is given, the row refuses
+            to call the model and reports what a real pass would cost.
+        cache_path: Disk cache, so a re-run of the grid is free.
+    """
+    model = LlmBaseline(
+        model=config.llm_model,
+        use_temporal_features=config.use_temporal_features,
+        classify_fn=classify_fn,
+        cache_path=cache_path or (config.checkpoint_dir.parent / "llm_cache.json"),
+        dry_run=dry_run,
+    )
+    results, model = run_sklearn_baseline(
+        config, model, f"zero-shot LLM ({config.llm_model})", run_analysis
+    )
+    results["llm_model"] = model.describe_model()
+    return results, model
+
+
 def build_model(config, tiny=False, vocab_size=None):
     """Construct the classifier, optionally as the tiny test model.
 
@@ -342,7 +374,7 @@ def parse_args(argv=None):
 
     model_group = parser.add_argument_group("model")
     model_group.add_argument("--model", default="bert",
-                             choices=["bert", "tfidf", "embeddings"],
+                             choices=["bert", "tfidf", "embeddings", "llm"],
                              help="Which classifier to run. 'tfidf' is the linear "
                                   "baseline and 'embeddings' is frozen sentence "
                                   "vectors plus logistic regression; both ignore "
@@ -350,6 +382,8 @@ def parse_args(argv=None):
     model_group.add_argument("--encoder-name", default=DEFAULT_ENCODER,
                              help="Encoder for --model embeddings. Frozen, never "
                                   "fine-tuned.")
+    model_group.add_argument("--llm-model", default=DEFAULT_LLM_MODEL,
+                             help="Model for --model llm. Costs money to run.")
     model_group.add_argument("--model-name", default="bert-base-uncased")
     model_group.add_argument("--max-length", type=int, default=256)
     model_group.add_argument("--no-temporal", action="store_true",
@@ -403,6 +437,7 @@ def main(argv=None):
         column_map=args.column_map,
         model_name=args.model_name,
         encoder_name=args.encoder_name,
+        llm_model=args.llm_model,
         max_length=args.max_length,
         use_temporal_features=not args.no_temporal,
         use_attention_pooling=not args.no_attention_pooling,
@@ -422,12 +457,18 @@ def main(argv=None):
     else:
         print("Temporal branch: OFF (text-only ablation)")
 
-    if args.model in ("tfidf", "embeddings"):
+    if args.model in ("tfidf", "embeddings", "llm"):
         if args.model == "tfidf":
             results, _ = run_tfidf_baseline(config, run_analysis=not args.skip_analysis)
-        else:
+        elif args.model == "embeddings":
             results, _ = run_embedding_baseline(config,
                                                 run_analysis=not args.skip_analysis)
+        else:
+            # Reaching this line is the opt-in; --model llm is not a default
+            # anywhere and the row bills per row of the validation split.
+            results, _ = run_llm_baseline(config,
+                                          run_analysis=not args.skip_analysis,
+                                          dry_run=False)
         metrics_path = save_metrics(
             results, config.checkpoint_dir.parent / f"results_{args.model}.json"
         )

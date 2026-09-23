@@ -76,6 +76,10 @@ def parse_args(argv=None):
                         help="Linear half only. Fast, and needs no network.")
     parser.add_argument("--embeddings", action="store_true",
                         help="Include the frozen sentence-embedding row.")
+    parser.add_argument("--llm", action="store_true",
+                        help="Include the zero-shot LLM row. COSTS MONEY.")
+    parser.add_argument("--llm-model", default=None,
+                        help="Model for the --llm row.")
     parser.add_argument("--output-dir", default=str(OUTPUT_DIR))
     parser.add_argument("--results", default=str(PROJECT_ROOT / "RESULTS.md"))
     return parser.parse_args(argv)
@@ -143,10 +147,13 @@ def main(argv=None):
     ]
     if args.encoder_name:
         grid_argv += ["--encoder-name", args.encoder_name]
+    if args.llm_model:
+        grid_argv += ["--llm-model", args.llm_model]
     for flag, enabled in (("--tiny-model", args.tiny_model),
                           ("--offline-tokenizer", args.offline_tokenizer),
                           ("--skip-bert", args.skip_bert),
-                          ("--embeddings", args.embeddings)):
+                          ("--embeddings", args.embeddings),
+                          ("--llm", args.llm)):
         if enabled:
             grid_argv.append(flag)
     benchmark.main(grid_argv)

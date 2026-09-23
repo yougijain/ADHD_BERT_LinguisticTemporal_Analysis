@@ -22,6 +22,7 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 import main as pipeline  # noqa: E402
 from models.embedding_baseline import DEFAULT_ENCODER  # noqa: E402
+from models.llm_baseline import DEFAULT_MODEL as DEFAULT_LLM_MODEL  # noqa: E402
 from models.model_utils import save_metrics, set_seed  # noqa: E402
 from training.config import Config  # noqa: E402
 
@@ -35,6 +36,7 @@ def _build_config(args, use_temporal):
         column_map=args.column_map,
         model_name=args.model_name,
         encoder_name=args.encoder_name,
+        llm_model=args.llm_model,
         max_length=args.max_length,
         use_temporal_features=use_temporal,
         epochs=args.epochs,
@@ -75,6 +77,23 @@ def run_grid(args):
             label = f"Frozen {args.encoder_name.split('/')[-1]}"
             print(f"\n{'=' * 70}\n{label} | {feature_set}\n{'=' * 70}")
             results, _ = pipeline.run_embedding_baseline(config, run_analysis=False)
+            rows.append({"model": label, "features": feature_set,
+                         "metrics": results["final_metrics"]})
+
+    # Zero-shot LLM: no task training at all, so it splits a different axis
+    # than the frozen-embedding row. Opt-in and billed per validation row --
+    # never reached unless --llm is passed explicitly.
+    if args.llm:
+        for use_temporal in (False, True):
+            config = _build_config(args, use_temporal)
+            config.ensure_dirs()
+            set_seed(config.seed)
+
+            feature_set = "text + temporal" if use_temporal else "text only"
+            label = f"Zero-shot {args.llm_model}"
+            print(f"\n{'=' * 70}\n{label} | {feature_set}\n{'=' * 70}")
+            results, _ = pipeline.run_llm_baseline(config, run_analysis=False,
+                                                   dry_run=False)
             rows.append({"model": label, "features": feature_set,
                          "metrics": results["final_metrics"]})
 
@@ -189,6 +208,11 @@ def parse_args(argv=None):
                              "and BERT. Needs a model download.")
     parser.add_argument("--encoder-name", default=DEFAULT_ENCODER,
                         help="Encoder for the --embeddings row.")
+    parser.add_argument("--llm", action="store_true",
+                        help="Add a zero-shot LLM row. COSTS MONEY: one API "
+                             "call per validation row, per ablation arm.")
+    parser.add_argument("--llm-model", default=DEFAULT_LLM_MODEL,
+                        help="Model for the --llm row.")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--learning-rate", type=float, default=2e-5)
