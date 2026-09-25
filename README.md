@@ -416,7 +416,8 @@ its confidence interval clears the baseline. A flat threshold would paint a
 three-point gain on 226 rows green, and three points on 226 rows is noise.
 
 To publish, set GitHub Pages to **`master` / `docs`** in the repository
-settings once. After that the page updates by committing it.
+settings once. After that the page updates by committing it, and it serves at
+`https://yougijain.github.io/text-vs-timing/`.
 
 ## What happened
 

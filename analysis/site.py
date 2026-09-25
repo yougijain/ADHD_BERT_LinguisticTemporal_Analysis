@@ -38,7 +38,7 @@ QUESTION = "Does when a post goes up add anything over what it says?"
 
 SITE_DIR = PROJECT_ROOT / "docs"
 
-REPO_URL = "https://github.com/yougijain/ADHD_BERT_LinguisticTemporal_Analysis"
+REPO_URL = "https://github.com/yougijain/text-vs-timing"
 
 # Figures worth putting on the page, in reading order. The run writes more than
 # this -- the rest stay in outputs/ for whoever wants them.
